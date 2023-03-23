@@ -10,12 +10,12 @@
 - Advanced configuration tabs
 - Easy to run directly from the UI
 - Easy to run multiple configs in batch runs
-
-## Features (Coming Soon)
-
 - Gallery preview w/ search capability
 - Easy to use Tag Editor
 - Tag statistics tab
+
+## Features (later)
+
 - Tag auto-completion
 
 ## Requirements
