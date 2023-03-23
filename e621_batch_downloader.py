@@ -519,7 +519,8 @@ class E6_Downloader:
         expr = None
 
         # send total to progressbar
-        self.backend_conn.send(len(tag_groups))
+        if self.backend_conn:
+            self.backend_conn.send(len(tag_groups))
 
         for group in tag_groups:
             tags = set([s.strip() for s in group.split(',')])
@@ -539,7 +540,8 @@ class E6_Downloader:
             else:
                 expr |= sub_expr
             # send total to progressbar
-            self.backend_conn.send(1)
+            if self.backend_conn:
+                self.backend_conn.send(1)
         if expr is not None:
             df = df.filter(expr)
 
@@ -652,7 +654,8 @@ class E6_Downloader:
 
         total_links = len(batch_nums)
         # send total to progressbar
-        self.backend_conn.send(total_links)
+        if self.backend_conn:
+            self.backend_conn.send(total_links)
 
         for batch_num, posts_save_path in zip(batch_nums, posts_save_paths):
             df = pl.read_parquet(posts_save_path)
@@ -670,7 +673,8 @@ class E6_Downloader:
             replace_tags = prms["replace_tags"][batch_num]
 
             ext_directory = {'png': prms["png_folder"][batch_num], 'jpg': prms["jpg_folder"][batch_num],
-                             'webm': prms["webm_folder"][batch_num], 'gif': prms["gif_folder"][batch_num]}
+                             'webm': prms["webm_folder"][batch_num], 'gif': prms["gif_folder"][batch_num],
+                             'swf': prms["swf_folder"][batch_num]}
 
             base = pl.repeat('https://static1.e621.net/data/', n=length, eager=True)
             slash = pl.repeat('/', n=length, eager=True)
@@ -790,6 +794,7 @@ class E6_Downloader:
                             else:
                                 _fline += '\n' + '\t'.join(
                                     links) + f'\n  dir={directory}' + f'\n  out={filename_from_type}{ext}'
+
                             validate_redownload.add((directory, filename_from_type, ext))
                             found_md5.add(md5)
                     if __file == '':
@@ -866,7 +871,8 @@ class E6_Downloader:
                     f.write(f'id:{_id}\nmd5:{md5}\nsource:[ {source} ]\n')
 
         # send total to progressbar
-        self.backend_conn.send(1)
+        if self.backend_conn:
+            self.backend_conn.send(1)
 
         for batch_num, df in zip(batch_nums, df_list_for_tag_files):
 
@@ -955,6 +961,12 @@ class E6_Downloader:
                         updated_tags = updated_tags.replace('(', '')
                         updated_tags = updated_tags.replace(')', '')
 
+                    # ### DEBUG
+                    # print(f"===================")
+                    # print(f"\nDEBUG::\t\ttagfilename_lst:\t{tagfilename_lst}")
+                    # print(f"\nDEBUG::\t\ttagfilename_lst[idx]:\t{tagfilename_lst[idx]}")
+                    # print(f"===================")
+
                     if tagfilebasename_lst[idx] in tagfiles_no_post:
                         with open(tagfiles_no_post_folder + tagfilebasename_lst[idx], 'w', encoding="utf-8") as f:
                             f.write(updated_tags)
@@ -1024,7 +1036,8 @@ class E6_Downloader:
                         delete_original, resized_img_folder):
 
         # send total to progressbar
-        self.backend_conn.send(num_images)
+        if self.backend_conn:
+            self.backend_conn.send(num_images)
 
         resized_img_folder = imgs_folder if (delete_original or resized_img_folder == '') else resized_img_folder
         if (img_ext == 'same_as_original') or (os.path.splitext(img_file)[1] == img_ext):
@@ -1084,7 +1097,8 @@ class E6_Downloader:
 
         length = len(img_files)
         # send total to progressbar
-        self.backend_conn.send(length)
+        if self.backend_conn:
+            self.backend_conn.send(length)
 
         multiprocessing.freeze_support()
         with multiprocessing.Pool(num_cpu) as pool:
@@ -1111,7 +1125,8 @@ class E6_Downloader:
 
         length = len(img_files)
         # send total to progressbar
-        self.backend_conn.send(length)
+        if self.backend_conn:
+            self.backend_conn.send(length)
 
         multiprocessing.freeze_support()
         with multiprocessing.Pool(num_cpu) as pool:
@@ -1131,6 +1146,9 @@ class E6_Downloader:
                     shutil.copyfile(img_fol + tag_file, res_fol + tag_file)
         print('')
 
+    def close_PIPE(self):
+        if self.backend_conn:
+            self.backend_conn.close()
 
     def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
         self.basefolder = basefolder
@@ -1282,5 +1300,6 @@ class E6_Downloader:
         print(f'## Total session elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
         print('#################################################################')
 
-        self.backend_conn.close()
+        self.close_PIPE()
+
         del self.cached_e621_posts
