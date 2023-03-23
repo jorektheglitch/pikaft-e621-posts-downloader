@@ -1235,28 +1235,28 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 with gr.Row():
                     tag_search_textbox = gr.Textbox(label="Search e621 tags the same way as the site prepend the minus symbol to make the tag negative E.G. anthro -fox", lines=1, value="")
                 with gr.Row():
-                    apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type, (ONLY) for tag editing',value=[])
+                    apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
                 with gr.Row():
                     tag_remove_button = gr.Button(value="Remove Selected", variant='primary')
                     tag_save_button = gr.Button(value="Save Changes", variant='primary')
 
                 with gr.Row():
-                    tag_add_artist_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_artist_textbox = gr.Textbox(label="Artist: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
                 with gr.Row():
-                    tag_add_character_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_character_textbox = gr.Textbox(label="Character: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_character_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Character Tag/s', value=[])
                 with gr.Row():
-                    tag_add_species_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_species_textbox = gr.Textbox(label="Species: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_species_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Species Tag/s', value=[])
                 with gr.Row():
-                    tag_add_general_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_general_textbox = gr.Textbox(label="General: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_general_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='General Tag/s', value=[])
                 with gr.Row():
-                    tag_add_meta_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_meta_textbox = gr.Textbox(label="Meta: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_meta_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Meta Tag/s', value=[])
                 with gr.Row():
-                    tag_add_rating_textbox = gr.Textbox(label="Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
+                    tag_add_rating_textbox = gr.Textbox(label="Rating: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
 
 
