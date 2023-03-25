@@ -326,7 +326,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     update_JSON(settings_json, config_name)
 
     temp = '\\' if is_windows() else '/'
-    return gr.update(choices=[(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))],
+    return gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
                                                                 label='Select to Run', value=[])
 
 def textbox_handler_required(tag_string_comp):
@@ -531,16 +531,58 @@ def show_gallery(folder_type_select):
         # verbose_print(f"all_images_dict:\t\t{all_images_dict}")
     return gr.update(value=images, visible=True)
 
-def change_config(file_path):
+def change_config(quick_json_select, file_path):
     temp = '\\' if is_windows() else '/'
     global settings_json
     global config_name
-    if temp in file_path:
-        settings_json = load_session_config(file_path)
-        config_name = file_path
+
+    if quick_json_select != config_name:
+        settings_json = load_session_config(os.path.join(cwd, quick_json_select))
+        config_name = os.path.join(cwd, quick_json_select)
     else:
-        settings_json = load_session_config(os.path.join(cwd, file_path))
-        config_name = os.path.join(cwd, file_path)
+        if temp in file_path:
+            settings_json = load_session_config(file_path)
+            config_name = file_path
+        else:
+            settings_json = load_session_config(os.path.join(cwd, file_path))
+            config_name = os.path.join(cwd, file_path)
+
+    global required_tags_list
+    required_tags_list = get_list(settings_json["required_tags"], settings_json["tag_sep"])
+    for tag in required_tags_list:
+        if len(tag) == 0:
+            required_tags_list.remove(tag)
+
+    global blacklist_tags
+    blacklist_tags = get_list(settings_json["blacklist"], " | ")
+    for tag in blacklist_tags:
+        if len(tag) == 0:
+            blacklist_tags.remove(tag)
+
+    verbose_print(f"{settings_json}")
+    verbose_print(f"json key count: {len(settings_json)}")
+
+    # UPDATE json with new key, value pairs
+    if not "min_date" in settings_json:
+        settings_json["min_year"] = 2000
+    elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
+        settings_json["min_year"] = int(settings_json["min_date"].split("-")[0])
+    else:
+        settings_json["min_year"] = int(settings_json["min_date"])
+
+    if not "min_month" in settings_json:
+        settings_json["min_month"] = 1
+    elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
+        settings_json["min_month"] = from_padded(settings_json["min_date"].split("-")[1])
+
+    if not "min_day" in settings_json:
+        settings_json["min_day"] = 1
+    elif isinstance(settings_json["min_date"], str) and settings_json["min_date"].count("-") > 1:
+        settings_json["min_day"] = from_padded(settings_json["min_date"].split("-")[-1])
+
+    update_JSON(settings_json, config_name)
+
+
 
     batch_folder = gr.update(value=settings_json["batch_folder"])
     resized_img_folder = gr.update(value=settings_json["resized_img_folder"])
@@ -561,8 +603,8 @@ def change_config(file_path):
     collect_checkbox_group_var = gr.update(choices=collect_checkboxes, value=grab_pre_selected(settings_json, collect_checkboxes))
     download_checkbox_group_var = gr.update(choices=download_checkboxes, value=grab_pre_selected(settings_json, download_checkboxes))
     resize_checkbox_group_var = gr.update(choices=resize_checkboxes, value=grab_pre_selected(settings_json, resize_checkboxes))
-    required_tags_group_var = gr.update(choices=settings_json["required_tags"], value=[])
-    blacklist_group_var = gr.update(choices=settings_json["blacklist"], value=[])
+    required_tags_group_var = gr.update(choices=required_tags_list, value=[])
+    blacklist_group_var = gr.update(choices=blacklist_tags, value=[])
     skip_posts_file = gr.update(value=settings_json["skip_posts_file"])
     skip_posts_type = gr.update(value=settings_json["skip_posts_type"])
     collect_from_listed_posts_file = gr.update(value=settings_json["collect_from_listed_posts_file"])
@@ -587,11 +629,14 @@ def change_config(file_path):
     global is_csv_loaded
     is_csv_loaded = False
 
+    all_json_files_checkboxgroup = gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), value=[])
+    quick_json_select = gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]))
+
     return batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,min_year,min_month, \
            min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var, \
            blacklist_group_var,skip_posts_file,skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,apply_filter_to_listed_posts, \
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
-           remove_tags_list,replace_tags_list,tag_count_list_folder
+           remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select
 
 def print_hello():
     verbose_print(f"HELLO WORLD!")
@@ -1084,9 +1129,11 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 method_tag_files = gr.Radio(choices=method_tag_files_opts, label='Resized Img Tag Handler', value=settings_json["method_tag_files"])
             with gr.Column():
                 settings_path = gr.Textbox(lines=1, label='Path to JSON (REQUIRED)', value=config_name)
-            with gr.Column():
-                create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
-                load_json_file_button = gr.Button(value="Load from JSON", variant='secondary')
+            create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
+            temp = '\\' if is_windows() else '/'
+            quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
+                                      value=config_name)
+            load_json_file_button = gr.Button(value="Load from JSON", variant='secondary')
 
     with gr.Tab("Stats Config"):
         with gr.Row():
@@ -1220,7 +1267,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         with gr.Accordion("Batch Run"):
             with gr.Row():
                 temp = '\\' if is_windows() else '/'
-                all_json_files_checkboxgroup = gr.CheckboxGroup(choices=[(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))],
+                all_json_files_checkboxgroup = gr.CheckboxGroup(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
                                                                 label='Select to Run', value=[])
             with gr.Row():
                 run_button_batch = gr.Button(value="Batch Run", variant='primary')
@@ -1323,14 +1370,14 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                  img_meta_tag_checkbox_group, img_rating_tag_checkbox_group],
                         _js="(g, d) => [document.querySelector(\'.selected img\').getAttribute(\'src\'), d]")
 
-    load_json_file_button.click(fn=change_config, inputs=[settings_path], outputs=[batch_folder,resized_img_folder,
+    load_json_file_button.click(fn=change_config, inputs=[quick_json_select,settings_path], outputs=[batch_folder,resized_img_folder,
                 tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,
                 min_year,min_month,min_day,min_area,top_n,min_short_side,collect_checkbox_group_var,
                 download_checkbox_group_var,resize_checkbox_group_var,required_tags_group_var,blacklist_group_var,skip_posts_file,
                 skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
                 apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,downloaded_posts_folder,
                 png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
-                replace_tags_list,tag_count_list_folder])
+                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select])
 
     config_save_var0.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
