@@ -285,6 +285,10 @@ class E6_Downloader:
 
         self.check_valid_param(prms["method_tag_files"], 'method_tag_files', ('relocate', 'copy'))
 
+        for i, do_include_tag_file in enumerate(prms["include_tag_file"]):
+            if do_include_tag_file is False:
+                prms["method_tag_files"][i] = 'skip'
+
 
     def check_tag_query(self, prms, e621_tags_set):
         tags = ','.join(prms["required_tags"]).replace(' ', '')
@@ -1113,7 +1117,7 @@ class E6_Downloader:
                 if method == 'relocate':
                     print(f'\r## Relocating tag files {i}/{length}', end='')
                     os.replace(img_folder + tag_file, resized_img_folder + tag_file)
-                else:  # copy
+                elif method == 'copy':
                     print(f'\r## Copying tag files {i}/{length}', end='')
                     shutil.copyfile(img_folder + tag_file, resized_img_folder + tag_file)
         print('')
@@ -1141,7 +1145,7 @@ class E6_Downloader:
                 if method == 'relocate':
                     print(f'\r## Relocating tag files {i}/{length}', end='')
                     os.replace(img_fol + tag_file, res_fol + tag_file)
-                else:
+                elif method == 'copy':
                     print(f'\r## Copying tag files {i}/{length}', end='')
                     shutil.copyfile(img_fol + tag_file, res_fol + tag_file)
         print('')
