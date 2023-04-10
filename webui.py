@@ -644,13 +644,14 @@ def change_config(quick_json_select, file_path):
 def print_hello():
     verbose_print(f"HELLO WORLD!")
 
-def get_img_tags(gallery_comp):
-    gallery_comp = str(gallery_comp[0])
+def get_img_tags(gallery_comp, event_data: gr.SelectData):
+    gallery_comp = gallery_comp[event_data.index]['name']
     verbose_print(f"gallery_comp:\t\t{gallery_comp}")
     temp = '\\' if is_windows() else '/'
     gallery_comp = gallery_comp.split(temp)[-1]  # name w/ extn
     download_folder_type = gallery_comp.split(".")[-1] # get ext type
     verbose_print(f"download_folder_type:\t\t{download_folder_type}")
+    verbose_print(f"----->\t\t{download_folder_type}_folder")
 
     gallery_comp = gallery_comp.replace(f".{download_folder_type}", ".txt")
     img_name = gallery_comp.split(f".txt")[0]
@@ -1367,11 +1368,10 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
-    gallery_comp.select(fn=print_hello,inputs=[],outputs=[]).then(fn=get_img_tags, inputs=[gallery_comp],
+    gallery_comp.select(fn=get_img_tags, inputs=[gallery_comp],
                         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group,
                                  img_species_tag_checkbox_group, img_general_tag_checkbox_group,
-                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group],
-                        _js="(g, d) => [document.querySelector(\'.selected img\').getAttribute(\'src\'), d]")
+                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
     load_json_file_button.click(fn=change_config, inputs=[quick_json_select,settings_path], outputs=[batch_folder,resized_img_folder,
                 tag_sep,tag_order_format,prepend_tags,append_tags,img_ext,method_tag_files,min_score,min_fav_count,
