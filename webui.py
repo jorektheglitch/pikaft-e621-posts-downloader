@@ -641,9 +641,6 @@ def change_config(quick_json_select, file_path):
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
            remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select
 
-def print_hello():
-    verbose_print(f"HELLO WORLD!")
-
 def get_img_tags(gallery_comp, event_data: gr.SelectData):
     gallery_comp = gallery_comp[event_data.index]['name']
     verbose_print(f"gallery_comp:\t\t{gallery_comp}")
@@ -1210,6 +1207,12 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             blacklist_group_var = gr.CheckboxGroup(choices=blacklist_tags, label='ALL Blacklisted Tags', value=[])
 
     with gr.Tab("Additional Components Config"):
+        gr.Markdown(
+        """
+        ### By DEFAULT the: Path to negative tags file is filled in. Edit or remove file and/or tags as necessary.
+        ### Tags specified in the negative tag file, removes all tag instances from images (when downloaded).
+        ### Please see the "Table" in https://github.com/pikaflufftuft/pikaft-e621-posts-downloader for more information.
+        """)
         with gr.Row():
             config_save_var5 = gr.Button(value="Apply & Save Settings", variant='primary')
         with gr.Row():
