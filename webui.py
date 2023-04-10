@@ -460,6 +460,7 @@ def data_download(progress=gr.Progress()):
     return gr.update(interactive=False, visible=False)
 
 def data_resize(resize_checkbox_group, progress=gr.Progress()):
+    global frontend_conn, backend_conn
     if not "skip_resize" in resize_checkbox_group:
         # thread block and wait for response
         total = int(frontend_conn.recv())
@@ -469,11 +470,13 @@ def data_resize(resize_checkbox_group, progress=gr.Progress()):
             _ = frontend_conn.recv()
 
     frontend_conn.close()
-    del e6_downloader, frontend_conn, backend_conn
+    del frontend_conn, backend_conn
     return gr.update(interactive=False, visible=False)
 
 def end_connection():
+    global e6_downloader
     e6_downloader.join()
+    del e6_downloader
 
 
 
