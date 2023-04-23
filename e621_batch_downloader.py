@@ -343,30 +343,33 @@ class E6_Downloader:
 
     def get_db(self, base_folder, posts_csv='', tags_csv='', e621_posts_list_filename='', e621_tags_list_filename='',
                keep_db=False):
-        db_export_file_path = os.path.join(base_folder, 'db_export.html')
-        subprocess.check_output(
-            f'"{self.aria2c_path}" -d "{base_folder}" -o db_export.html --allow-overwrite=true --auto-file-renaming=false https://e621.net/db_export/',
-            shell=True)
-        with open(db_export_file_path) as f:
-            contents = f.read()
+        if all((posts_csv == '', e621_posts_list_filename == '')) or all((tags_csv == '', e621_tags_list_filename == '')):
+            db_export_file_path = os.path.join(base_folder, 'db_export.html')
+            subprocess.check_output(
+                f'"{self.aria2c_path}" -d "{base_folder}" -o db_export.html --allow-overwrite=true --auto-file-renaming=false https://e621.net/db_export/',
+                shell=True)
+            with open(db_export_file_path) as f:
+                contents = f.read()
 
-            pattern = r"posts\S*?\.gz"
-            matches = []
-            for line in contents.split("\n"):
-                match = re.search(pattern, line)
-                if match:
-                    matches.append(match.group())
-            posts_filename = matches[-1]
+                pattern = r"posts\S*?\.gz"
+                matches = []
+                for line in contents.split("\n"):
+                    match = re.search(pattern, line)
+                    if match:
+                        matches.append(match.group())
+                posts_filename = matches[-1]
 
-            pattern = r"tags\S*?\.gz"
-            matches = []
-            for line in contents.split("\n"):
-                match = re.search(pattern, line)
-                if match:
-                    matches.append(match.group())
-            tags_filename = matches[-1]
+                pattern = r"tags\S*?\.gz"
+                matches = []
+                for line in contents.split("\n"):
+                    match = re.search(pattern, line)
+                    if match:
+                        matches.append(match.group())
+                tags_filename = matches[-1]
 
-        if e621_posts_list_filename == '':
+        if posts_csv != '' and e621_posts_list_filename == '':
+            e621_posts_list_filename = os.path.join(base_folder,f'{posts_csv[:-4]}.parquet')
+        elif e621_posts_list_filename == '':
             e621_posts_list_filename = f'{base_folder}/{posts_filename[:-7]}.parquet'
         if not os.path.isfile(e621_posts_list_filename):
 
@@ -399,7 +402,9 @@ class E6_Downloader:
             if not keep_db:
                 os.remove(posts_csv)
 
-        if e621_tags_list_filename == '':
+        if tags_csv != '' and e621_tags_list_filename == '':
+            e621_tags_list_filename = os.path.join(base_folder, f'{tags_csv[:-4]}.parquet')
+        elif e621_tags_list_filename == '':
             e621_tags_list_filename = f'{base_folder}/{tags_filename[:-7]}.parquet'
         if not os.path.isfile(e621_tags_list_filename):
 
@@ -407,7 +412,7 @@ class E6_Downloader:
                 tags_csv = f'{base_folder}/{tags_filename[:-3]}'
             if not os.path.isfile(tags_csv):
                 tags_link = 'https://e621.net/db_export/' + tags_filename
-                tags_file_path = f'{base_folder}/{tags_filename}'
+                tags_file_path = os.path.join(base_folder, tags_filename)
                 print(tags_file_path)
                 if not os.path.isfile(tags_file_path):
                     with requests.get(tags_link, stream=True) as r:
@@ -1224,7 +1229,7 @@ class E6_Downloader:
 
         self.normalize_params(prms, batch_count)
 
-        print('## Checking setting validity')
+        print('## Checking settings validity')
         self.prep_params(prms, batch_count, base_folder)
 
         print('## Checking required files')

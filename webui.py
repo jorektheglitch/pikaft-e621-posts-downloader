@@ -319,6 +319,7 @@ def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,kee
     e6_downloader.start()
 
 def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
+    global settings_json
     help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
 
     progress(0, desc="Starting...")
@@ -328,6 +329,8 @@ def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=Fal
             path += ".json"
 
         e6_downloader = e621_batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
+
+        settings_json = help.load_session_config(path)
         # apply post-processing
         auto_config_apply(images_full_change_dict_textbox)
         del e6_downloader
@@ -1255,7 +1258,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
 
     help.verbose_print("Done")
 
-def check_to_reload_auto_complete_config(optional_path):
+def check_to_reload_auto_complete_config(optional_path=None):
     global auto_complete_config, auto_complete_config_name
     if not optional_path or optional_path == "":
         if not settings_json["batch_folder"] in auto_complete_config_name:
@@ -1380,17 +1383,18 @@ def apply_stack_changes():
 
 def auto_config_apply(images_full_change_dict_textbox):
     global auto_complete_config
-    # load correct config
-    check_to_reload_auto_complete_config(images_full_change_dict_textbox)
+    if auto_complete_config and len(list(auto_complete_config.keys())) > 0: # if file is empty DO NOT RUN
+        # load correct config
+        check_to_reload_auto_complete_config(images_full_change_dict_textbox)
 
-    # load the csvs if not already loaded and the image dictionaries
-    load_images_and_csvs()
+        # load the csvs if not already loaded and the image dictionaries
+        load_images_and_csvs()
 
-    # filter out invalid images & update CSVs
-    filter_out()
+        # filter out invalid images & update CSVs
+        filter_out()
 
-    # apply every in order image change & update CSVs & save image changes
-    apply_stack_changes()
+        # apply every in order image change & update CSVs & save image changes
+        apply_stack_changes()
 
 '''
 ##################################################################################################################################
