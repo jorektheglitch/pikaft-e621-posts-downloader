@@ -55,6 +55,30 @@ python webui.py
 
 ## Additional Information
 
+# Important:
+Due to the new connection check in https://e621.net/db_export/, automatically downloading the db export (MIGHT) throw an error. You need to download the posts and tags .gz files manually. You only need to download one "posts" .csv.gz and one "tags" .csv.gz. I recommend downloading the latest versions.
+
+![e621_db_export_sample](e621_db_export_sample.png)
+
+Extract the csv files. I recommend placing them where the downloader is located. Specify the csv paths using `--postscsv` and `--tagscsv`.
+
+Then populate the text fields manually in the GUI, step-wise reproducing the same command line approach:
+
+For example:
+- On the Run Tab, populate the `postscsv` and `tagscsv` textboxes. Then Run.
+- After the downloader created the optimized parquet files, populate the `postsparquet` and `tagsparquet` textboxes. Then Run.
+
+OR
+
+For example:
+```
+python3 e621_batch_downloader.py -s settings.json --postscsv posts-2023-04-15.csv --tagscsv tags-2023-04-15.csv
+```
+After the downloader created the optimized parquet files, you can use those using `--postsparquet` and `--tagsparquet`.
+```
+python3 e621_batch_downloader.py -s settings.json --postsparquet posts-2023-04-15.parquet --tagsparquet tags-2023-04-15.parquet
+```
+
 ##### General Config Tab
 
 - set the path to the batch directory (stores downloaded data) ; creates new directory if it doesn't yet exist
