@@ -56,7 +56,7 @@ python webui.py
 ## Additional Information
 
 # Important:
-Due to the new connection check in https://e621.net/db_export/, automatically downloading the db export (MIGHT) throw an error. You need to download the posts and tags .gz files manually. You only need to download one "posts" .csv.gz and one "tags" .csv.gz. I recommend downloading the latest versions.
+It could be caused by the e621 website doing a connection check, so automatically downloading the db export throws an error. You need to download the posts and tags .gz files manually. You only need to download one "posts" .csv.gz and one "tags" .csv.gz. I recommend downloading the latest versions.
 
 ![e621_db_export_sample](e621_db_export_sample.png)
 
