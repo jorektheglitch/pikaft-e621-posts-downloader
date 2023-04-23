@@ -1,141 +1,10 @@
 import gradio as gr
 import os
-import json
-import copy
 import multiprocessing as mp
-import subprocess as sub
 import glob
 
 import e621_batch_downloader
-
-'''
-##################################################################################################################################
-###################################################     HELPER FUNCTIONS     #####################################################
-##################################################################################################################################
-'''
-
-def verbose_print(text):
-    print(f"{text}")
-
-def load_session_config(f_name):
-    session_config = None
-    file_exists = os.path.exists(f_name)
-    if not file_exists: # create the file
-        with open(f_name, 'w') as f:
-            f.close()
-    else: # load the file
-        data_flag = True # detects if the file is empty
-        with open(f_name, 'r') as json_file:
-            lines = json_file.readlines()
-            if len(lines) == 0 or len(lines[0].replace(' ', '')) == 0:
-                data_flag = False
-            json_file.close()
-
-        if data_flag: # data present
-            with open(f_name) as json_file:
-                data = json.load(json_file)
-
-                temp_config = [dictionary for dictionary in data]
-                if len(temp_config) > 0:
-                    session_config = data
-                else:
-                    session_config = {}
-                json_file.close()
-    return session_config
-
-def grab_pre_selected(settings, all_checkboxes):
-    pre_selected_checkboxes = []
-    for key in all_checkboxes:
-        if settings[key]:
-            pre_selected_checkboxes.append(key)
-    return pre_selected_checkboxes
-
-def update_JSON(settings, temp_config_name):
-    temp = copy.deepcopy(settings)
-    for entry in temp:
-        verbose_print(f"{entry}:\t{settings[entry]}")
-
-    with open(temp_config_name, "w") as f:
-        json.dump(temp, indent=4, fp=f)
-    f.close()
-    verbose_print("="*42)
-
-def create_dirs(arb_path):
-    if not os.path.exists(arb_path):
-        os.makedirs(arb_path)
-
-def execute(cmd):
-    popen = sub.Popen(cmd, stdout=sub.PIPE, universal_newlines=True)
-    for stdout_line in iter(popen.stdout.readline, ""):
-        yield stdout_line
-    popen.stdout.close()
-    return_code = popen.wait()
-    if return_code:
-        raise sub.CalledProcessError(return_code, cmd)
-
-def get_list(arb_string, delimeter):
-    return arb_string.split(delimeter)
-
-def get_string(arb_list, delimeter):
-    return delimeter.join(arb_list)
-
-def from_padded(line):
-    if len(line) > 1:# check for padded-0
-        if int(line[0]) == 0:# remove the 0, cast to int, return
-            return int(line[-1])
-    return int(line)
-
-def to_padded(num):
-    return f"{num:02}"
-
-def is_windows():
-    return os.name == 'nt'
-
-def parse_files_all_tags(file_list):
-    all_tags_all_files = {}
-    temp = '\\' if is_windows() else '/'
-    for single_file in file_list:
-        all_tags = []
-        img_id = single_file.split(temp)[-1].split(".")[0]
-        # verbose_print(f"single_file:\t\t{single_file}")
-        with open(single_file, 'r', encoding='utf-8') as read_file:
-            while True:
-                line = read_file.readline()
-                if not line:
-                    break
-
-                line = line.replace(" ", "")
-                length = len(line.split(","))
-
-                if length > 3:  # assume everything on one line
-                    tags = line.split(",")
-                    for tag in tags:
-                        all_tags.append(tag)
-                else:  # assume cascaded tags
-                    tag = line.split(",")[0]
-                    all_tags.append(tag)
-            read_file.close()
-            all_tags_all_files[img_id] = all_tags
-    return all_tags_all_files.copy()
-
-
-def parse_csv_all_tags(csv_file_path):
-    # verbose_print(f"single_file:\t\t{csv_file_path}")
-    temp_dict = {}
-    counter = 0
-    with open(csv_file_path, 'r', encoding='utf-8') as read_file:
-        while True:
-            line = read_file.readline()
-            if not line:
-                break
-            if counter > 0:
-                line = line.replace(" ", "")
-                key = line.split(',')[0]
-                value = line.split(',')[-1]
-                temp_dict[key] = int(value.strip())
-            counter += 1
-        read_file.close()
-    return temp_dict.copy()
+import helper_functions as help
 
 '''
 ##################################################################################################################################
@@ -159,7 +28,7 @@ file_extn_list = ["png", "jpg", "gif"]
 ### assume settings.json at the root dir of repo
 
 # session config
-global config_name
+global config_name, auto_complete_config_name
 config_name = "settings.json"
 
 global is_csv_loaded
@@ -179,22 +48,22 @@ global all_images_dict # load on radio click - gallery (always do BOOL check)
 all_images_dict = {}### add images by key:id, value:selected_image_dict
 
 global settings_json
-settings_json = load_session_config(os.path.join(cwd, config_name))
+settings_json = help.load_session_config(os.path.join(cwd, config_name))
 
 global required_tags_list
-required_tags_list = get_list(settings_json["required_tags"], settings_json["tag_sep"])
+required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
 for tag in required_tags_list:
     if len(tag) == 0:
         required_tags_list.remove(tag)
 
 global blacklist_tags
-blacklist_tags = get_list(settings_json["blacklist"], " | ")
+blacklist_tags = help.get_list(settings_json["blacklist"], " | ")
 for tag in blacklist_tags:
     if len(tag) == 0:
         blacklist_tags.remove(tag)
 
-verbose_print(f"{settings_json}")
-verbose_print(f"json key count: {len(settings_json)}")
+help.verbose_print(f"{settings_json}")
+help.verbose_print(f"json key count: {len(settings_json)}")
 
 # UPDATE json with new key, value pairs
 if not "min_date" in settings_json:
@@ -207,21 +76,41 @@ else:
 if not "min_month" in settings_json:
     settings_json["min_month"] = 1
 elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
-    settings_json["min_month"] = from_padded(settings_json["min_date"].split("-")[1])
+    settings_json["min_month"] = help.from_padded(settings_json["min_date"].split("-")[1])
 
 if not "min_day" in settings_json:
     settings_json["min_day"] = 1
 elif isinstance(settings_json["min_date"], str) and settings_json["min_date"].count("-") > 1:
-    settings_json["min_day"] = from_padded(settings_json["min_date"].split("-")[-1])
+    settings_json["min_day"] = help.from_padded(settings_json["min_date"].split("-")[-1])
 
-update_JSON(settings_json, config_name)
+help.update_JSON(settings_json, config_name)
+
+global blacklist_images_dict
+global whitelist_images_all_changes_dict
+global auto_complete_config
+auto_complete_config = {}
+auto_config_path = os.path.join(cwd, "auto_configs")
+auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
+temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+if not os.path.exists(auto_config_path):
+    os.makedirs(auto_config_path)
+# load if data present / create if file not yet created
+auto_complete_config = help.load_session_config(temp_config_path)
 
 '''
 ##################################################################################################################################
 #################################################     COMPONENT/S FUNCTION/S     #################################################
 ##################################################################################################################################
 '''
-
+def add_current_images():
+    global auto_complete_config, all_images_dict
+    temp = list(all_images_dict.keys())
+    if "searched" in temp:
+        temp.remove("searched")
+    for ext in temp:
+        for every_image in list(all_images_dict[ext].keys()):
+            if not every_image in auto_complete_config:
+                auto_complete_config[every_image] = []
 
 def reset_selected_img(img_id_textbox):
     # reset selected_img
@@ -249,6 +138,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
                        webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,replace_tags_list,
                        tag_count_list_folder,min_month,min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,
                        resize_checkbox_group_var,create_new_config_checkbox,settings_path):
+
     global settings_json
     settings_json["batch_folder"] = str(batch_folder)
     settings_json["resized_img_folder"] = str(resized_img_folder)
@@ -265,7 +155,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     settings_json["min_month"] = int(min_month)
     settings_json["min_day"] = int(min_day)
 
-    settings_json["min_date"] = f"{int(min_year)}-{to_padded(int(min_month))}-{to_padded(int(min_day))}"
+    settings_json["min_date"] = f"{int(min_year)}-{help.to_padded(int(min_month))}-{help.to_padded(int(min_day))}"
 
     settings_json["min_area"] = int(min_area)
     settings_json["top_n"] = int(top_n)
@@ -290,8 +180,8 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
         else:
             settings_json[key] = False
 
-    settings_json["required_tags"] = get_string(required_tags_list, str(tag_sep))
-    settings_json["blacklist"] = get_string(blacklist_tags, " | ")
+    settings_json["required_tags"] = help.get_string(required_tags_list, str(tag_sep))
+    settings_json["blacklist"] = help.get_string(blacklist_tags, " | ")
 
     settings_json["skip_posts_file"] = str(skip_posts_file)
     settings_json["skip_posts_type"] = str(skip_posts_type)
@@ -312,7 +202,7 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
     settings_json["tag_count_list_folder"] = str(tag_count_list_folder)
 
     if create_new_config_checkbox: # if called from the "create new button" the True flag will always be passed to ensure this
-        temp = '\\' if is_windows() else '/'
+        temp = '\\' if help.is_windows() else '/'
         global config_name
         if temp in settings_path:
             config_name = settings_path
@@ -323,9 +213,9 @@ def config_save_button(batch_folder,resized_img_folder,tag_sep,tag_order_format,
         raise ValueError('No Config Name Specified')
 
     # Update json
-    update_JSON(settings_json, config_name)
+    help.update_JSON(settings_json, config_name)
 
-    temp = '\\' if is_windows() else '/'
+    temp = '\\' if help.is_windows() else '/'
     return gr.update(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
                                                                 label='Select to Run', value=[])
 
@@ -419,7 +309,7 @@ def make_run_visible():
     return gr.update(interactive=False, visible=True)
 
 def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath=''):
-    verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
+    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
 
     #### ADD A PIPE parameter that passes the connection to the other process
     global frontend_conn, backend_conn
@@ -428,8 +318,8 @@ def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,kee
     e6_downloader = mp.Process(target=e621_batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
     e6_downloader.start()
 
-def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,progress=gr.Progress()):
-    verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
+def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
+    help.verbose_print(f"RUN COMMAND IS:\t{basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb}")
 
     progress(0, desc="Starting...")
     for setting in progress.tqdm(run_button_batch, desc="Tracking Total Progress"):
@@ -438,6 +328,8 @@ def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=Fal
             path += ".json"
 
         e6_downloader = e621_batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
+        # apply post-processing
+        auto_config_apply(images_full_change_dict_textbox)
         del e6_downloader
     return gr.update(interactive=False, visible=False)
 
@@ -478,27 +370,11 @@ def end_connection():
     e6_downloader.join()
     del e6_downloader
 
-
-
-def merge_dict(path1, path2, path3):
-    png_list = glob.glob(os.path.join(path1, f"*.png"))
-    png_list = [x.replace(f".png", f".txt") for x in png_list]
-
-    jpg_list = glob.glob(os.path.join(path2, f"*.jpg"))
-    jpg_list = [x.replace(f".jpg", f".txt") for x in jpg_list]
-
-    gif_list = glob.glob(os.path.join(path3, f"*.gif"))
-    gif_list = [x.replace(f".gif", f".txt") for x in gif_list]
-
-    temp = {}
-    temp["png"] = parse_files_all_tags(png_list)
-    temp["jpg"] = parse_files_all_tags(jpg_list)
-    temp["gif"] = parse_files_all_tags(gif_list)
-    temp["searched"] = {}
-
-    return temp.copy()
-
-
+######
+# all_images_dict ->
+### image_type -> {img_id, tags}
+### searched -> {img_id, tags}
+######
 def show_gallery(folder_type_select):
     global all_images_dict
     # clear searched dict
@@ -509,6 +385,7 @@ def show_gallery(folder_type_select):
     folder_path = os.path.join(cwd, settings_json["batch_folder"])
     folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
     folder_path = os.path.join(folder_path, settings_json[f"{folder_type_select}_folder"])
+    # type select
     images = glob.glob(os.path.join(folder_path, f"*.{folder_type_select}"))
 
     global is_csv_loaded
@@ -517,53 +394,55 @@ def show_gallery(folder_type_select):
                                            settings_json["downloaded_posts_folder"])
 
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["tag_count_list_folder"])
-
+        # load ALL tags into relative categorical dictionaries
         is_csv_loaded = True
         global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
-        artist_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
-        character_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
-        species_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
-        general_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
-        meta_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
-        rating_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
-        tags_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+        artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+        character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+        species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+        general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+        meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+        rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+        tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
 
-        all_images_dict = merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
+        all_images_dict = help.merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
                                      os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
                                      os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
         # verbose_print(f"all_images_dict:\t\t{all_images_dict}")
+        # help.verbose_print(f"list(all_images_dict[ext]):\t\t{list(all_images_dict[folder_type_select])}")
     return gr.update(value=images, visible=True)
 
+# load a different config
 def change_config(quick_json_select, file_path):
-    temp = '\\' if is_windows() else '/'
+    temp = '\\' if help.is_windows() else '/'
     global settings_json
     global config_name
 
     if quick_json_select != config_name:
-        settings_json = load_session_config(os.path.join(cwd, quick_json_select))
+        settings_json = help.load_session_config(os.path.join(cwd, quick_json_select))
         config_name = os.path.join(cwd, quick_json_select)
     else:
         if temp in file_path:
-            settings_json = load_session_config(file_path)
+            settings_json = help.load_session_config(file_path)
             config_name = file_path
         else:
-            settings_json = load_session_config(os.path.join(cwd, file_path))
+            settings_json = help.load_session_config(os.path.join(cwd, file_path))
             config_name = os.path.join(cwd, file_path)
 
     global required_tags_list
-    required_tags_list = get_list(settings_json["required_tags"], settings_json["tag_sep"])
+    required_tags_list = help.get_list(settings_json["required_tags"], settings_json["tag_sep"])
     for tag in required_tags_list:
         if len(tag) == 0:
             required_tags_list.remove(tag)
 
     global blacklist_tags
-    blacklist_tags = get_list(settings_json["blacklist"], " | ")
+    blacklist_tags = help.get_list(settings_json["blacklist"], " | ")
     for tag in blacklist_tags:
         if len(tag) == 0:
             blacklist_tags.remove(tag)
 
-    verbose_print(f"{settings_json}")
-    verbose_print(f"json key count: {len(settings_json)}")
+    help.verbose_print(f"{settings_json}")
+    help.verbose_print(f"json key count: {len(settings_json)}")
 
     # UPDATE json with new key, value pairs
     if not "min_date" in settings_json:
@@ -576,17 +455,16 @@ def change_config(quick_json_select, file_path):
     if not "min_month" in settings_json:
         settings_json["min_month"] = 1
     elif isinstance(settings_json["min_date"], str) and "-" in settings_json["min_date"]:
-        settings_json["min_month"] = from_padded(settings_json["min_date"].split("-")[1])
+        settings_json["min_month"] = help.from_padded(settings_json["min_date"].split("-")[1])
 
     if not "min_day" in settings_json:
         settings_json["min_day"] = 1
     elif isinstance(settings_json["min_date"], str) and settings_json["min_date"].count("-") > 1:
-        settings_json["min_day"] = from_padded(settings_json["min_date"].split("-")[-1])
+        settings_json["min_day"] = help.from_padded(settings_json["min_date"].split("-")[-1])
 
-    update_JSON(settings_json, config_name)
+    help.update_JSON(settings_json, config_name)
 
-
-
+    # load all presets
     batch_folder = gr.update(value=settings_json["batch_folder"])
     resized_img_folder = gr.update(value=settings_json["resized_img_folder"])
     tag_sep = gr.update(value=settings_json["tag_sep"])
@@ -603,9 +481,9 @@ def change_config(quick_json_select, file_path):
     min_area = gr.update(value=settings_json["min_area"])
     top_n = gr.update(value=settings_json["top_n"])
     min_short_side = gr.update(value=settings_json["min_short_side"])
-    collect_checkbox_group_var = gr.update(choices=collect_checkboxes, value=grab_pre_selected(settings_json, collect_checkboxes))
-    download_checkbox_group_var = gr.update(choices=download_checkboxes, value=grab_pre_selected(settings_json, download_checkboxes))
-    resize_checkbox_group_var = gr.update(choices=resize_checkboxes, value=grab_pre_selected(settings_json, resize_checkboxes))
+    collect_checkbox_group_var = gr.update(choices=collect_checkboxes, value=help.grab_pre_selected(settings_json, collect_checkboxes))
+    download_checkbox_group_var = gr.update(choices=download_checkboxes, value=help.grab_pre_selected(settings_json, download_checkboxes))
+    resize_checkbox_group_var = gr.update(choices=resize_checkboxes, value=help.grab_pre_selected(settings_json, resize_checkboxes))
     required_tags_group_var = gr.update(choices=required_tags_list, value=[])
     blacklist_group_var = gr.update(choices=blacklist_tags, value=[])
     skip_posts_file = gr.update(value=settings_json["skip_posts_file"])
@@ -626,8 +504,8 @@ def change_config(quick_json_select, file_path):
     replace_tags_list = gr.update(value=settings_json["replace_tags_list"])
     tag_count_list_folder = gr.update(value=settings_json["tag_count_list_folder"])
 
-    verbose_print(f"{settings_json}")
-    verbose_print(f"json key count: {len(settings_json)}")
+    help.verbose_print(f"{settings_json}")
+    help.verbose_print(f"json key count: {len(settings_json)}")
 
     global is_csv_loaded
     is_csv_loaded = False
@@ -641,14 +519,15 @@ def change_config(quick_json_select, file_path):
            save_searched_list_type,save_searched_list_path,downloaded_posts_folder,png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type, \
            remove_tags_list,replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select
 
+### Select an image
 def get_img_tags(gallery_comp, event_data: gr.SelectData):
     gallery_comp = gallery_comp[event_data.index]['name']
-    verbose_print(f"gallery_comp:\t\t{gallery_comp}")
-    temp = '\\' if is_windows() else '/'
+    help.verbose_print(f"gallery_comp:\t\t{gallery_comp}")
+    temp = '\\' if help.is_windows() else '/'
     gallery_comp = gallery_comp.split(temp)[-1]  # name w/ extn
     download_folder_type = gallery_comp.split(".")[-1] # get ext type
-    verbose_print(f"download_folder_type:\t\t{download_folder_type}")
-    verbose_print(f"----->\t\t{download_folder_type}_folder")
+    help.verbose_print(f"download_folder_type:\t\t{download_folder_type}")
+    help.verbose_print(f"----->\t\t{download_folder_type}_folder")
 
     gallery_comp = gallery_comp.replace(f".{download_folder_type}", ".txt")
     img_name = gallery_comp.split(f".txt")[0]
@@ -661,14 +540,15 @@ def get_img_tags(gallery_comp, event_data: gr.SelectData):
     if not all_images_dict:
         raise ValueError('radio button not pressed i.e. image type button')
 
-    verbose_print(f"gallery_comp:\t\t{gallery_comp}")
-    verbose_print(f"img_name:\t\t{img_name}")
-    verbose_print(f"full_path:\t\t{full_path}")
+    help.verbose_print(f"gallery_comp:\t\t{gallery_comp}")
+    help.verbose_print(f"img_name:\t\t{img_name}")
+    help.verbose_print(f"full_path:\t\t{full_path}")
 
     img_tag_list = all_images_dict[download_folder_type][img_name]
 
-    verbose_print(f"img_tag_list:\t\t{img_tag_list}")
+    help.verbose_print(f"img_tag_list:\t\t{img_tag_list}")
 
+    # determine the category of each tag (TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED)
     temp_tag_dict = {}
     temp_list = [[],[],[],[],[],[]]
     for tag in img_tag_list:
@@ -698,21 +578,77 @@ def get_img_tags(gallery_comp, event_data: gr.SelectData):
     meta_comp_checkboxgroup = gr.update(choices=temp_tag_dict["meta"])
     rating_comp_checkboxgroup = gr.update(choices=temp_tag_dict["rating"])
 
-    # verbose_print(f"======================")
-    # verbose_print(f"temp_tag_dict:\t\t{temp_tag_dict}")
-    # verbose_print(f"img_name:\t\t{img_name}")
-    # verbose_print(f"download_folder_type:\t\t{download_folder_type}")
-    # verbose_print(f"======================")
-
     global selected_image_dict # id -> {categories: tag/s}, type -> string
     selected_image_dict = {}
     selected_image_dict[img_name] = temp_tag_dict.copy()
     selected_image_dict["type"] = download_folder_type
 
-    verbose_print(f"selected_image_dict:\t\t{selected_image_dict}")
+    help.verbose_print(f"selected_image_dict:\t\t{selected_image_dict}")
 
     return gr.update(value=img_name), artist_comp_checkboxgroup, character_comp_checkboxgroup, species_comp_checkboxgroup, general_comp_checkboxgroup, meta_comp_checkboxgroup, rating_comp_checkboxgroup
 
+def is_csv_dict_empty(stats_load_file):
+    tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                 settings_json["tag_count_list_folder"])
+    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
+    if "artist" in stats_load_file:
+        value = len(list(artist_csv_dict.keys()))
+        if (value == 0):
+            artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+        return [artist_csv_dict.copy(), value]
+    elif "character" in stats_load_file:
+        value = len(list(character_csv_dict.keys()))
+        if (value == 0):
+            character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+        return [character_csv_dict.copy(), value]
+    elif "species" in stats_load_file:
+        value = len(list(species_csv_dict.keys()))
+        if (value == 0):
+            species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+        return [species_csv_dict.copy(), value]
+    elif "general" in stats_load_file:
+        value = len(list(general_csv_dict.keys()))
+        if (value == 0):
+            general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+        return [general_csv_dict.copy(), value]
+    elif "meta" in stats_load_file:
+        value = len(list(meta_csv_dict.keys()))
+        if (value == 0):
+            meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+        return [meta_csv_dict.copy(), value]
+    elif "rating" in stats_load_file:
+        value = len(list(rating_csv_dict.keys()))
+        if (value == 0):
+            rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+        return [rating_csv_dict.copy(), value]
+    elif "tags" in stats_load_file:
+        value = len(list(tags_csv_dict.keys()))
+        if (value == 0):
+            tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+        return [tags_csv_dict.copy(), value]
+
+def run_stats(stats_run_options, stats_load_file):
+    csv_table, size = is_csv_dict_empty(stats_load_file)
+
+    help.verbose_print(f"stats_run_options:\t\t{stats_run_options}")
+    help.verbose_print(f"stats_load_file:\t\t{stats_load_file}")
+
+    dataframe = None
+    show_list = None
+    if "frequency table" in stats_run_options:
+        show_list = sorted(csv_table.items(), key=lambda x: x[1], reverse=True)
+        dataframe = gr.update(visible=True, label=stats_run_options, max_rows=size,
+                              value=show_list)
+    elif "inverse freq table" in stats_run_options:
+        total_sum = sum(csv_table.values())
+        normalized_dict = {key: value / total_sum for key, value in csv_table.items()}
+        show_list = sorted(normalized_dict.items(), key=lambda x: x[1], reverse=True)
+        dataframe = gr.update(visible=True, label=stats_run_options, max_rows=size,
+                              value=show_list)
+    # verbose_print(f"show_list:\t\t{show_list}")
+    return dataframe
+
+### Search a set of images
 def filter_images_by_tags(input_tags, allowed_image_types):
     global all_images_dict
     # clear searched dict
@@ -737,10 +673,11 @@ def filter_images_by_tags(input_tags, allowed_image_types):
                 if all(tag in tags for tag in positive_tags) and not any(tag in tags for tag in negative_tags):
                     filtered_images[str(ext)][str(image_id)] = tags
     all_images_dict["searched"] = filtered_images.copy()
-    verbose_print(f"===============================")
-    verbose_print(f"all_images_dict[\"searched\"]:\t\t{all_images_dict['searched']}")
-    verbose_print(f"===============================")
+    help.verbose_print(f"===============================")
+    help.verbose_print(f"all_images_dict[\"searched\"]:\t\t{all_images_dict['searched']}")
+    help.verbose_print(f"===============================")
 
+### Update gellery component
 def update_search_gallery():
     global all_images_dict
     folder_path = os.path.join(cwd, settings_json["batch_folder"])
@@ -759,109 +696,30 @@ def search_tags(tag_search_textbox, global_search_opts):
     images = update_search_gallery()
     return gr.update(value=images, visible=True)
 
-def write_tags_to_text_file(input_string, file_path):
-    with open(file_path, 'w') as file:
-        file.write(input_string)
-
-def dict_to_sorted_list(d):
-    return sorted([[k, v] for k, v in d.items()], key=lambda x: x[1], reverse=True)
-
-def write_tags_to_csv(dictionary, file_path):
-    temp = '\\' if is_windows() else '/'
-    csv_name = (file_path.split(temp)[-1]).split('.csv')[0]
-    header_string = f"{csv_name},count"
-    if "tags" in header_string:
-        header_string = f"tag,count"
-    # sort tags descending by frequency
-    sort_dictionary_to_list = dict_to_sorted_list(dictionary)
-
-    with open(file_path, 'w') as file:
-        file.write(f"{header_string}\n")
-        for pair in sort_dictionary_to_list:
-            file.write(f"{pair[0]},{pair[1]}")
-    file.close()
-
-def save_tag_changes():
-    # do a full save of all tags
-    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
-
-    if not all_images_dict or not "png" in all_images_dict:
-        raise ValueError('radio button not pressed i.e. image type button')
-
-    verbose_print(f"++++++++++++++++++++++++++")
-    temp_list = list(all_images_dict.keys())
-    verbose_print(f"temp_list:\t\t{temp_list}")
-    # if NONE: save self (selected_image)
-    # if temp_list
-
-
-    if "searched" in temp_list:
-        temp_list.remove("searched")
-        verbose_print(f"removing searched key")
-        verbose_print(f"temp_list:\t\t{temp_list}")
-    for ext in temp_list:
-        full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
-        for img_id in list(all_images_dict[ext]):
-            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
-            temp_tag_string = ",".join(all_images_dict[ext][img_id])
-            write_tags_to_text_file(temp_tag_string, full_path)
-
-    tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
-                                 settings_json["tag_count_list_folder"])
-    # update csv stats files
+def add_to_csv_dictionaries(string_category, tag, count=1):
     global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
-    write_tags_to_csv(artist_csv_dict, os.path.join(tag_count_dir, "artist.csv"))
-    write_tags_to_csv(character_csv_dict, os.path.join(tag_count_dir, "character.csv"))
-    write_tags_to_csv(species_csv_dict, os.path.join(tag_count_dir, "species.csv"))
-    write_tags_to_csv(general_csv_dict, os.path.join(tag_count_dir, "general.csv"))
-    write_tags_to_csv(meta_csv_dict, os.path.join(tag_count_dir, "meta.csv"))
-    write_tags_to_csv(rating_csv_dict, os.path.join(tag_count_dir, "rating.csv"))
-    write_tags_to_csv(tags_csv_dict, os.path.join(tag_count_dir, "tags.csv"))
-    verbose_print(f"SAVE COMPLETE")
+    artist_csv_dict, character_csv_dict, species_csv_dict, \
+    general_csv_dict, meta_csv_dict, rating_csv_dict, \
+    tags_csv_dict = help.update_all_csv_dictionaries(artist_csv_dict.copy(),character_csv_dict.copy(),
+                                                     species_csv_dict.copy(),general_csv_dict.copy(),
+                                                     meta_csv_dict.copy(),rating_csv_dict.copy(),tags_csv_dict.copy(),
+                                                     string_category,tag,"+", count)
 
-def add_to_csv_dictionaries(string_category, tag):
+def remove_to_csv_dictionaries(string_category, tag, count=1):
     global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
-    if string_category in "artist":
-        if tag in list(artist_csv_dict.keys()):
-            artist_csv_dict[tag] = artist_csv_dict[tag] + 1
-        else:
-            artist_csv_dict[tag] = 1
-    if string_category in "character":
-        if tag in list(character_csv_dict.keys()):
-            character_csv_dict[tag] = character_csv_dict[tag] + 1
-        else:
-            character_csv_dict[tag] = 1
-    if string_category in "species":
-        if tag in list(species_csv_dict.keys()):
-            species_csv_dict[tag] = species_csv_dict[tag] + 1
-        else:
-            species_csv_dict[tag] = 1
-    if string_category in "general":
-        if tag in list(general_csv_dict.keys()):
-            general_csv_dict[tag] = general_csv_dict[tag] + 1
-        else:
-            general_csv_dict[tag] = 1
-    if string_category in "meta":
-        if tag in list(meta_csv_dict.keys()):
-            meta_csv_dict[tag] = meta_csv_dict[tag] + 1
-        else:
-            meta_csv_dict[tag] = 1
-    if string_category in "rating":
-        if tag in list(rating_csv_dict.keys()):
-            rating_csv_dict[tag] = rating_csv_dict[tag] + 1
-        else:
-            rating_csv_dict[tag] = 1
-    # change the global tag csv
-    if tag in list(tags_csv_dict.keys()):
-        tags_csv_dict[tag] = tags_csv_dict[tag] + 1
-    else:
-        tags_csv_dict[tag] = 1
+    artist_csv_dict, character_csv_dict, species_csv_dict, \
+    general_csv_dict, meta_csv_dict, rating_csv_dict, \
+    tags_csv_dict = help.update_all_csv_dictionaries(artist_csv_dict.copy(),character_csv_dict.copy(),
+                                                     species_csv_dict.copy(),general_csv_dict.copy(),
+                                                     meta_csv_dict.copy(),rating_csv_dict.copy(),tags_csv_dict.copy(),
+                                                     string_category,tag,"-", count)
 
 # this method only effects ONE category at a time
-# selected_img has the form:
+# selected_image_dict has the form:
 #     id -> {categories: [tags]}
 #     type -> ext
 def add_tag_changes(tag_string, string_category, apply_to_all_type_select_checkboxgroup, img_id):
+    global auto_complete_config
     tag_list = tag_string.replace(" ", "").split(",")
     img_id = str(img_id)
 
@@ -876,7 +734,7 @@ def add_tag_changes(tag_string, string_category, apply_to_all_type_select_checkb
             if not tag in selected_image_dict[img_id][string_category]:
                 selected_image_dict[img_id][string_category].append(tag)
         # update info for category components
-        verbose_print(f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
+        help.verbose_print(f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
         category_component = gr.update(choices=selected_image_dict[img_id][string_category], value=[])
     elif img_id and len(img_id) > 0 and selected_image_dict and (not apply_to_all_type_select_checkboxgroup or len(apply_to_all_type_select_checkboxgroup) == 0):
         # update info for selected image
@@ -884,23 +742,33 @@ def add_tag_changes(tag_string, string_category, apply_to_all_type_select_checkb
             if not tag in selected_image_dict[img_id][string_category]:
                 selected_image_dict[img_id][string_category].append(tag)
         # update info for category components
-        verbose_print(f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
+        help.verbose_print(f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
         category_component = gr.update(choices=selected_image_dict[img_id][string_category], value=[])
 
         # find image in searched : id
         if (selected_image_dict["type"] in list(all_images_dict['searched'].keys())) and (img_id in list(all_images_dict["searched"][selected_image_dict["type"]].keys())):
             for tag in tag_list:
                 if not tag in all_images_dict["searched"][selected_image_dict["type"]][img_id]:
-                    all_images_dict["searched"][selected_image_dict["type"]][img_id].append(tag)
-                    all_images_dict[selected_image_dict["type"]][img_id].append(tag)
+                    # get last tag in category
+                    last_tag = selected_image_dict[img_id][string_category][-2] # i.e. the tag before the new one
+                    # get its index on the global list
+                    glob_index = (all_images_dict["searched"][selected_image_dict["type"]][img_id]).index(last_tag)
+                    all_images_dict["searched"][selected_image_dict["type"]][img_id].insert(glob_index, tag)
+
+                    glob_index = (all_images_dict[selected_image_dict["type"]][img_id]).index(last_tag)
+                    all_images_dict[selected_image_dict["type"]][img_id].insert(glob_index, tag)
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(string_category, tag)
+                    add_to_csv_dictionaries(string_category, tag) # add
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()): # find image in ( TYPE ) : id
             for tag in tag_list:
                 if not tag in all_images_dict[selected_image_dict["type"]][img_id]:
-                    all_images_dict[selected_image_dict["type"]][img_id].append(tag)
+                    # get last tag in category
+                    last_tag = selected_image_dict[img_id][string_category][-2] # i.e. the tag before the new one
+                    # get its index on the global list
+                    glob_index = (all_images_dict[selected_image_dict["type"]][img_id]).index(last_tag)
+                    all_images_dict[selected_image_dict["type"]][img_id].insert(glob_index, tag)
                     # create or increment category table AND frequency table for (all) tags
-                    add_to_csv_dictionaries(string_category, tag)
+                    add_to_csv_dictionaries(string_category, tag) # add
 
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup: # edit searched and then all the instances of the respective types
@@ -908,61 +776,46 @@ def add_tag_changes(tag_string, string_category, apply_to_all_type_select_checkb
                 for img_id in list(all_images_dict["searched"][key_type].keys()):
                     for tag in tag_list:
                         if not tag in all_images_dict["searched"][key_type][img_id]: # add tag
-                            all_images_dict["searched"][key_type][img_id].append(tag)
-                            all_images_dict[key_type][img_id].append(tag)
+                            # get last tag in category
+                            last_tag = selected_image_dict[img_id][string_category][-2]  # i.e. the tag before the new one
+                            # get its index on the global list
+                            glob_index = (all_images_dict["searched"][key_type][img_id]).index(last_tag)
+                            all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
+
+                            glob_index = (all_images_dict[key_type][img_id]).index(last_tag)
+                            all_images_dict[key_type][img_id].insert(glob_index, tag)
+
+                            if not img_id in auto_complete_config:
+                                auto_complete_config[img_id] = []
+                            auto_complete_config[img_id].append('+', tag, (glob_index))
+
                             # create or increment category table AND frequency table for (all) tags
-                            add_to_csv_dictionaries(string_category, tag)
+                            add_to_csv_dictionaries(string_category, tag) # add
         else:
             for key_type in apply_to_all_type_select_checkboxgroup:
                 for img_id in list(all_images_dict[key_type].keys()):
                     for tag in tag_list:
                         if not tag in all_images_dict[key_type][img_id]:
-                            all_images_dict[key_type][img_id].append(tag)
+                            # get last tag in category
+                            last_tag = selected_image_dict[img_id][string_category][-2]  # i.e. the tag before the new one
+                            # get its index on the global list
+                            glob_index = (all_images_dict[key_type][img_id]).index(last_tag)
+                            all_images_dict[key_type][img_id].insert(glob_index, tag)
+
+                            if not img_id in auto_complete_config:
+                                auto_complete_config[img_id] = []
+                            auto_complete_config[img_id].append('+', tag, (glob_index))
+
                             if "searched" in all_images_dict and key_type in all_images_dict["searched"] and img_id in all_images_dict["searched"][key_type]:
-                                all_images_dict["searched"][key_type][img_id].append(tag)
+                                glob_index = (all_images_dict["searched"][key_type][img_id]).index(last_tag)
+                                all_images_dict["searched"][key_type][img_id].insert(glob_index, tag)
+
                             # create or increment category table AND frequency table for (all) tags
-                            add_to_csv_dictionaries(string_category, tag)
+                            add_to_csv_dictionaries(string_category, tag) # add
     return category_component
 
-def remove_to_csv_dictionaries(string_category, tag):
-    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
-    if string_category in "artist":
-        if tag in list(artist_csv_dict.keys()):
-            artist_csv_dict[tag] = artist_csv_dict[tag] - 1
-        if artist_csv_dict[tag] == 0:
-            del artist_csv_dict[tag]
-    if string_category in "character":
-        if tag in list(character_csv_dict.keys()):
-            character_csv_dict[tag] = character_csv_dict[tag] - 1
-        if character_csv_dict[tag] == 0:
-            del character_csv_dict[tag]
-    if string_category in "species":
-        if tag in list(species_csv_dict.keys()):
-            species_csv_dict[tag] = species_csv_dict[tag] - 1
-        if species_csv_dict[tag] == 0:
-            del species_csv_dict[tag]
-    if string_category in "general":
-        if tag in list(general_csv_dict.keys()):
-            general_csv_dict[tag] = general_csv_dict[tag] - 1
-        if general_csv_dict[tag] == 0:
-            del general_csv_dict[tag]
-    if string_category in "meta":
-        if tag in list(meta_csv_dict.keys()):
-            meta_csv_dict[tag] = meta_csv_dict[tag] - 1
-        if meta_csv_dict[tag] == 0:
-            del meta_csv_dict[tag]
-    if string_category in "rating":
-        if tag in list(rating_csv_dict.keys()):
-            rating_csv_dict[tag] = rating_csv_dict[tag] - 1
-        if rating_csv_dict[tag] == 0:
-            del rating_csv_dict[tag]
-    # change the global tag csv
-    if tag in list(tags_csv_dict.keys()):
-        tags_csv_dict[tag] = tags_csv_dict[tag] - 1
-    if tags_csv_dict[tag] == 0:
-        del tags_csv_dict[tag]
-
 def remove_tag_changes(category_tag_checkbox_group, string_category, apply_to_all_type_select_checkboxgroup, img_id):
+    global auto_complete_config
     tag_list = category_tag_checkbox_group
     img_id = str(img_id)
 
@@ -971,14 +824,14 @@ def remove_tag_changes(category_tag_checkbox_group, string_category, apply_to_al
     category_component = None
 
     # updates selected image ONLY when it ( IS ) specified AND its TYPE is specified for edits in "apply_to_all_type_select_checkboxgroup"
-    if img_id and len(img_id) > 0 and selected_image_dict and selected_image_dict[
-        "type"] in apply_to_all_type_select_checkboxgroup:
+    if img_id and len(img_id) > 0 and selected_image_dict and selected_image_dict["type"] in apply_to_all_type_select_checkboxgroup:
         # update info for selected image
         for tag in tag_list:
             if tag in selected_image_dict[img_id][string_category]:
-                selected_image_dict[img_id][string_category].remove(tag)
+                while tag in selected_image_dict[img_id][string_category]:
+                    selected_image_dict[img_id][string_category].remove(tag)
         # update info for category components
-        verbose_print(
+        help.verbose_print(
             f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
         category_component = gr.update(choices=selected_image_dict[img_id][string_category], value=[])
     elif img_id and len(img_id) > 0 and selected_image_dict and (
@@ -986,9 +839,10 @@ def remove_tag_changes(category_tag_checkbox_group, string_category, apply_to_al
         # update info for selected image
         for tag in tag_list:
             if tag in selected_image_dict[img_id][string_category]:
-                selected_image_dict[img_id][string_category].remove(tag)
+                while tag in selected_image_dict[img_id][string_category]:
+                    selected_image_dict[img_id][string_category].remove(tag)
         # update info for category components
-        verbose_print(
+        help.verbose_print(
             f"selected_image_dict[img_id][string_category]:\t\t{selected_image_dict[img_id][string_category]}")
         category_component = gr.update(choices=selected_image_dict[img_id][string_category], value=[])
 
@@ -997,16 +851,21 @@ def remove_tag_changes(category_tag_checkbox_group, string_category, apply_to_al
                 img_id in list(all_images_dict["searched"][selected_image_dict["type"]].keys())):
             for tag in tag_list:
                 if tag in all_images_dict["searched"][selected_image_dict["type"]][img_id]:
-                    all_images_dict["searched"][selected_image_dict["type"]][img_id].remove(tag)
-                    all_images_dict[selected_image_dict["type"]][img_id].remove(tag)
+                    while tag in all_images_dict["searched"][selected_image_dict["type"]][img_id]:
+                        all_images_dict["searched"][selected_image_dict["type"]][img_id].remove(tag)
+                    while tag in all_images_dict[selected_image_dict["type"]][img_id]:
+                        all_images_dict[selected_image_dict["type"]][img_id].remove(tag)
+
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(string_category, tag)
+                    remove_to_csv_dictionaries(string_category, tag) # remove
         elif img_id in list(all_images_dict[selected_image_dict["type"]].keys()):  # find image in ( TYPE ) : id
             for tag in tag_list:
                 if tag in all_images_dict[selected_image_dict["type"]][img_id]:
-                    all_images_dict[selected_image_dict["type"]][img_id].remove(tag)
+                    while tag in all_images_dict[selected_image_dict["type"]][img_id]:
+                        all_images_dict[selected_image_dict["type"]][img_id].remove(tag)
+
                     # create or increment category table AND frequency table for (all) tags
-                    remove_to_csv_dictionaries(string_category, tag)
+                    remove_to_csv_dictionaries(string_category, tag) # remove
 
     if len(apply_to_all_type_select_checkboxgroup) > 0:
         if "searched" in apply_to_all_type_select_checkboxgroup:  # edit searched and then all the instances of the respective types
@@ -1014,83 +873,524 @@ def remove_tag_changes(category_tag_checkbox_group, string_category, apply_to_al
                 for img_id in list(all_images_dict["searched"][key_type].keys()):
                     for tag in tag_list:
                         if tag in all_images_dict["searched"][key_type][img_id]:  # remove tag
-                            all_images_dict["searched"][key_type][img_id].remove(tag)
-                            all_images_dict[key_type][img_id].remove(tag)
+                            while tag in all_images_dict["searched"][key_type][img_id]:
+                                all_images_dict["searched"][key_type][img_id].remove(tag)
+                            while tag in all_images_dict[key_type][img_id]:
+                                all_images_dict[key_type][img_id].remove(tag)
+
+                                if not img_id in auto_complete_config:
+                                    auto_complete_config[img_id] = []
+                                auto_complete_config[img_id].append('-', tag)
+
                             # create or increment category table AND frequency table for (all) tags
-                            remove_to_csv_dictionaries(string_category, tag)
+                            remove_to_csv_dictionaries(string_category, tag) # remove
         else:
             for key_type in apply_to_all_type_select_checkboxgroup:
                 for img_id in list(all_images_dict[key_type].keys()):
                     for tag in tag_list:
                         if tag in all_images_dict[key_type][img_id]:
-                            all_images_dict[key_type][img_id].remove(tag)
+                            while tag in all_images_dict[key_type][img_id]:
+                                all_images_dict[key_type][img_id].remove(tag)
                             if "searched" in all_images_dict and key_type in all_images_dict[
                                 "searched"] and img_id in all_images_dict["searched"][key_type]:
-                                all_images_dict["searched"][key_type][img_id].remove(tag)
+                                while tag in all_images_dict["searched"][key_type][img_id]:
+                                    all_images_dict["searched"][key_type][img_id].remove(tag)
+
+                                    if not img_id in auto_complete_config:
+                                        auto_complete_config[img_id] = []
+                                    auto_complete_config[img_id].append('-', tag)
+
                             # create or increment category table AND frequency table for (all) tags
-                            remove_to_csv_dictionaries(string_category, tag)
+                            remove_to_csv_dictionaries(string_category, tag) # remove
     return category_component
 
-def is_csv_dict_empty(stats_load_file):
+def get_category_name(tag):
+    global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict
+    if tag in artist_csv_dict:
+        return "artist"
+    elif tag in character_csv_dict:
+        return "character"
+    elif tag in species_csv_dict:
+        return "species"
+    elif tag in general_csv_dict:
+        return "general"
+    elif tag in meta_csv_dict:
+        return "meta"
+    elif tag in rating_csv_dict:
+        return "rating"
+    else:
+        return None
+
+### if "searched" is selected in apply_to_all_type_select_checkboxgroup, then all SEARCHED images will be deleted!
+def remove_images(apply_to_all_type_select_checkboxgroup, image_id):
+    global all_images_dict
+    global selected_image_dict
+    image_id = str(image_id)
+    if not "searched" in apply_to_all_type_select_checkboxgroup:
+        # remove single image ONLY
+        if image_id in list(all_images_dict[selected_image_dict["type"]].keys()):
+            # remove tag count from csvs
+            category_keys = list(selected_image_dict[image_id].keys())
+            for category_key in category_keys:
+                for tag in selected_image_dict[image_id][category_key]:
+                    help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+                    # edit csv dictionaries
+                    remove_to_csv_dictionaries(category_key, tag) # remove
+            # delete image from dictionary
+            del all_images_dict[selected_image_dict["type"]][image_id]
+        if image_id in list(all_images_dict["searched"][selected_image_dict["type"]].keys()):
+            del all_images_dict["searched"][selected_image_dict["type"]][image_id]
+    else:
+        # remove all images that are "searched"
+        for key_type in list(all_images_dict["searched"].keys()):
+            for img_id in list(all_images_dict["searched"][key_type].keys()):
+                # delete searched images and use the global dictionary to update the CSVs before deleting those as well
+                del all_images_dict["searched"][key_type][img_id]
+                # iterate over all the tags for each image
+                for tag in all_images_dict[key_type][img_id]:
+                    category_key = get_category_name(tag)
+                    if category_key:
+                        help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+                        # edit csv dictionaries
+                        remove_to_csv_dictionaries(category_key, tag) # remove
+                del all_images_dict[key_type][img_id]
+
+    category_comp1 = gr.update(choices=selected_image_dict[image_id]["artist"], value=[])
+    category_comp2 = gr.update(choices=selected_image_dict[image_id]["character"], value=[])
+    category_comp3 = gr.update(choices=selected_image_dict[image_id]["species"], value=[])
+    category_comp4 = gr.update(choices=selected_image_dict[image_id]["general"], value=[])
+    category_comp5 = gr.update(choices=selected_image_dict[image_id]["meta"], value=[])
+    category_comp6 = gr.update(choices=selected_image_dict[image_id]["rating"], value=[])
+
+    # gallery update
+    images = update_search_gallery()
+    gallery = gr.update(value=images, visible=True)
+    # textbox update
+    id_box = gr.update(value="")
+    return category_comp1, category_comp2, category_comp3, category_comp4, category_comp5, category_comp6, gallery, id_box
+
+def csv_persist_to_disk():
     tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                  settings_json["tag_count_list_folder"])
+    # update csv stats files
     global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
-    if "artist" in stats_load_file:
-        value = len(list(artist_csv_dict.keys()))
-        if (value == 0):
-            artist_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
-        return [artist_csv_dict.copy(), value]
-    elif "character" in stats_load_file:
-        value = len(list(character_csv_dict.keys()))
-        if (value == 0):
-            character_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
-        return [character_csv_dict.copy(), value]
-    elif "species" in stats_load_file:
-        value = len(list(species_csv_dict.keys()))
-        if (value == 0):
-            species_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
-        return [species_csv_dict.copy(), value]
-    elif "general" in stats_load_file:
-        value = len(list(general_csv_dict.keys()))
-        if (value == 0):
-            general_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
-        return [general_csv_dict.copy(), value]
-    elif "meta" in stats_load_file:
-        value = len(list(meta_csv_dict.keys()))
-        if (value == 0):
-            meta_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
-        return [meta_csv_dict.copy(), value]
-    elif "rating" in stats_load_file:
-        value = len(list(rating_csv_dict.keys()))
-        if (value == 0):
-            rating_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
-        return [rating_csv_dict.copy(), value]
-    elif "tags" in stats_load_file:
-        value = len(list(tags_csv_dict.keys()))
-        if (value == 0):
-            tags_csv_dict = parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
-        return [tags_csv_dict.copy(), value]
+    help.write_tags_to_csv(artist_csv_dict, os.path.join(tag_count_dir, "artist.csv"))
+    help.write_tags_to_csv(character_csv_dict, os.path.join(tag_count_dir, "character.csv"))
+    help.write_tags_to_csv(species_csv_dict, os.path.join(tag_count_dir, "species.csv"))
+    help.write_tags_to_csv(general_csv_dict, os.path.join(tag_count_dir, "general.csv"))
+    help.write_tags_to_csv(meta_csv_dict, os.path.join(tag_count_dir, "meta.csv"))
+    help.write_tags_to_csv(rating_csv_dict, os.path.join(tag_count_dir, "rating.csv"))
+    help.write_tags_to_csv(tags_csv_dict, os.path.join(tag_count_dir, "tags.csv"))
 
-def run_stats(stats_run_options, stats_load_file):
-    csv_table, size = is_csv_dict_empty(stats_load_file)
+def save_tag_changes():
+    global auto_complete_config
+    # do a full save of all tags
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                       settings_json["downloaded_posts_folder"])
+    if not all_images_dict or not "png" in all_images_dict:
+        raise ValueError('radio button not pressed i.e. image type button')
 
-    verbose_print(f"stats_run_options:\t\t{stats_run_options}")
-    verbose_print(f"stats_load_file:\t\t{stats_load_file}")
+    help.verbose_print(f"++++++++++++++++++++++++++")
+    temp_list = list(all_images_dict.keys())
+    help.verbose_print(f"temp_list:\t\t{temp_list}")
+    # if NONE: save self (selected_image)
+    # if temp_list
 
-    dataframe = None
-    show_list = None
-    if "frequency table" in stats_run_options:
-        show_list = sorted(csv_table.items(), key=lambda x: x[1], reverse=True)
-        dataframe = gr.update(visible=True, label=stats_run_options, max_rows=size,
-                              value=show_list)
-    elif "inverse freq table" in stats_run_options:
-        total_sum = sum(csv_table.values())
-        normalized_dict = {key: value / total_sum for key, value in csv_table.items()}
-        show_list = sorted(normalized_dict.items(), key=lambda x: x[1], reverse=True)
-        dataframe = gr.update(visible=True, label=stats_run_options, max_rows=size,
-                              value=show_list)
-    # verbose_print(f"show_list:\t\t{show_list}")
-    return dataframe
+    if "searched" in temp_list:
+        temp_list.remove("searched")
+        help.verbose_print(f"removing searched key")
+        help.verbose_print(f"temp_list:\t\t{temp_list}")
+    for ext in temp_list:
+        full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+        for img_id in list(all_images_dict[ext]):
+            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+            temp_tag_string = ",".join(all_images_dict[ext][img_id])
+            help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+    # persist csv changes
+    csv_persist_to_disk()
+
+    add_current_images()
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    help.update_JSON(auto_complete_config, temp_config_path)
+
+    help.verbose_print(f"SAVE COMPLETE")
+
+def save_image_changes():
+    global auto_complete_config
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                       settings_json["downloaded_posts_folder"])
+    if not all_images_dict or not "png" in all_images_dict:
+        raise ValueError('radio button not pressed i.e. image type button')
+    help.verbose_print(f"++++++++++++++++++++++++++")
+    temp_list = list(all_images_dict.keys())
+    help.verbose_print(f"temp_list:\t\t{temp_list}")
+    if "searched" in temp_list:
+        temp_list.remove("searched")
+        help.verbose_print(f"removing searched key")
+        help.verbose_print(f"temp_list:\t\t{temp_list}")
+
+    # persist csv changes
+    csv_persist_to_disk()
+
+    temp = '\\' if help.is_windows() else '/'
+    for ext in temp_list:
+        full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+        # type select
+        images = [name.split(temp)[-1].split(".")[0] for name in glob.glob(os.path.join(full_path_gallery_type, f"*.{ext}"))] # getting the names of the files w.r.t. the directory
+        for img_id in images:
+            if not img_id in list(all_images_dict[ext]):
+                # delete img & txt files
+                os.remove(os.path.join(full_path_gallery_type, f"{img_id}.{ext}"))
+                os.remove(os.path.join(full_path_gallery_type, f"{img_id}.txt"))
+
+                del auto_complete_config[img_id]
+
+    add_current_images()
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    help.update_JSON(auto_complete_config, temp_config_path)
+
+    help.verbose_print(f"SAVE COMPLETE")
+
+def load_images_and_csvs():
+    global is_csv_loaded, all_images_dict
+    if not is_csv_loaded or (not all_images_dict or len(all_images_dict.keys()) == 0):
+        # clear searched dict
+        if "searched" in all_images_dict:
+            del all_images_dict["searched"]
+            all_images_dict["searched"] = {}
+
+        full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                           settings_json["downloaded_posts_folder"])
+        all_images_dict = help.merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
+                                          os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
+                                          os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
+
+        tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
+                                     settings_json["tag_count_list_folder"])
+        is_csv_loaded = True
+        global artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict, rating_csv_dict, tags_csv_dict
+        artist_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "artist.csv"))
+        character_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "character.csv"))
+        species_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "species.csv"))
+        general_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "general.csv"))
+        meta_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "meta.csv"))
+        rating_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "rating.csv"))
+        tags_csv_dict = help.parse_csv_all_tags(csv_file_path=os.path.join(tag_count_dir, "tags.csv"))
+
+def remove_from_all(file_path):
+    global auto_complete_config
+    # gather the tags
+    all_tags = help.get_text_file_data(file_path, 1)
+    all_tags = [x.rstrip('\n') for x in all_tags]
+    help.verbose_print(f"all_tags:\t{all_tags}")
+
+    # load the csvs if not already loaded and the image dictionaries
+    load_images_and_csvs()
+
+    # update the csvs and global dictionaries
+    for tag in all_tags:
+        category_key = get_category_name(tag)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+            # edit csv dictionaries
+            remove_to_csv_dictionaries(category_key, tag) # remove
+        # update all the image text files
+        for img_type in list(all_images_dict.keys()):
+            for every_image in list(all_images_dict[img_type].keys()):
+                if tag in all_images_dict[img_type][every_image]:
+                    while tag in all_images_dict[img_type][every_image]:
+                        all_images_dict[img_type][every_image].remove(tag)
+
+                        if not every_image in auto_complete_config:
+                            auto_complete_config[every_image] = []
+                        auto_complete_config[every_image].append('-', tag)
+    # persist changes
+    csv_persist_to_disk()
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
+    for ext in list(all_images_dict.keys()):
+        for img_id in list(all_images_dict[ext].keys()):
+            full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+            temp_tag_string = ",".join(all_images_dict[ext][img_id])
+            help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+
+    add_current_images()
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    help.update_JSON(auto_complete_config, temp_config_path)
+
+    help.verbose_print("Done")
+
+def replace_from_all(file_path):
+    global auto_complete_config
+    # gather the (keyword, tag/s) pairs
+    all_tags = help.get_text_file_data(file_path, 2)
+
+    for i in range(0, len(all_tags)):
+        all_tags[i][0] = all_tags[i][0].rstrip('\n')
+        for j in range(0, len(all_tags[i][1])):
+            all_tags[i][1][j] = all_tags[i][1][j].rstrip('\n')
+
+    help.verbose_print(f"all_tags:\t{all_tags}")
+
+    # load the csvs if not already loaded and the image dictionaries
+    load_images_and_csvs()
+
+    # update the csvs
+    for tag, replacement_tags in all_tags:
+        category_key = get_category_name(tag)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}\tand\treplacement_tags:\t{replacement_tags}")
+            # edit csv dictionaries
+            remove_to_csv_dictionaries(category_key, tag) # remove
+        for replacement_tag in replacement_tags:
+            category_key = get_category_name(replacement_tag)
+            # "SKIP" (do not add into csvs) if None
+            if category_key:
+                add_to_csv_dictionaries(category_key, replacement_tag) # add
+        # update all the image text files
+        for img_type in list(all_images_dict.keys()):
+            for every_image in list(all_images_dict[img_type].keys()):
+                if tag in all_images_dict[img_type][every_image]:
+                    # get index of keyword
+                    index = (all_images_dict[img_type][every_image]).index(tag)
+                    all_images_dict[img_type][every_image].remove(tag) ############ consider repeats present
+
+                    if not every_image in auto_complete_config:
+                        auto_complete_config[every_image] = []
+                    auto_complete_config[every_image].append('-', tag)
+
+                    for i in range(0, len(replacement_tags)):
+                        all_images_dict[img_type][every_image].insert((index + i), replacement_tags[i])
+
+                        if not every_image in auto_complete_config:
+                            auto_complete_config[every_image] = []
+                        auto_complete_config[every_image].append('+', replacement_tags[i], (index + i))
+    # persist changes
+    csv_persist_to_disk()
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
+    for ext in list(all_images_dict.keys()):
+        for img_id in list(all_images_dict[ext].keys()):
+            full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+            temp_tag_string = ",".join(all_images_dict[ext][img_id])
+            help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+
+    add_current_images()
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    help.update_JSON(auto_complete_config, temp_config_path)
+
+    help.verbose_print("Done")
+
+def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
+    global auto_complete_config
+    if not prepend_text or prepend_text == "":
+        raise ValueError('REPLACEMENT TEXT and/or TAG/S MUST BE SPECIFIED!\n'
+                         'tags can be removed with the text file and/or manually in the preview gallery tab.')
+
+    prepend_tags = (prepend_text.replace(" ", "")).split(",")
+
+    # load the csvs if not already loaded and the image dictionaries
+    load_images_and_csvs()
+
+    # update the csvs
+    if keyword_search_text and not keyword_search_text == "":
+        category_key = get_category_name(keyword_search_text)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\tkeyword_search_text:\t{keyword_search_text}\tand\tprepend_tags:\t{prepend_tags}")
+            # edit csv dictionaries
+            # add_to_csv_dictionaries(category_key, keyword_search_text) # add
+    for prepend_tag in prepend_tags:
+        category_key = get_category_name(prepend_tag)
+        # "SKIP" (do not add into csvs) if None
+        if category_key:
+            add_to_csv_dictionaries(category_key, prepend_tag) # add
+    # update all the image text files
+    for img_type in list(all_images_dict.keys()):
+        for every_image in list(all_images_dict[img_type].keys()):
+            if keyword_search_text and not keyword_search_text == "":
+                if keyword_search_text in all_images_dict[img_type][every_image]:
+                    # get index of keyword
+                    index = (all_images_dict[img_type][every_image]).index(keyword_search_text)
+                    if prepend_option == "End":
+                        index += 1
+                    for i in range(0, len(prepend_tags)):
+                        all_images_dict[img_type][every_image].insert((index + i), prepend_tags[i])
+
+                        if not every_image in auto_complete_config:
+                            auto_complete_config[every_image] = []
+                        auto_complete_config[every_image].append('+', prepend_tags[i], (index + i))
+            else:
+                if prepend_option == "Start":
+                    for i in range(0, len(prepend_tags)):
+                        all_images_dict[img_type][every_image].insert(i, prepend_tags[i])
+
+                        if not every_image in auto_complete_config:
+                            auto_complete_config[every_image] = []
+                        auto_complete_config[every_image].append('+', prepend_tags[i], (i))
+                else:
+                    for i in range(0, len(prepend_tags)):
+                        all_images_dict[img_type][every_image].append(prepend_tags[i])
+
+                        if not every_image in auto_complete_config:
+                            auto_complete_config[every_image] = []
+                        auto_complete_config[every_image].append('+', prepend_tags[i], (all_images_dict[img_type][every_image])-1)
+    # persist changes
+    csv_persist_to_disk()
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
+    for ext in list(all_images_dict.keys()):
+        for img_id in list(all_images_dict[ext].keys()):
+            full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+            temp_tag_string = ",".join(all_images_dict[ext][img_id])
+            help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+
+    add_current_images()
+    auto_config_path = os.path.join(cwd, "auto_configs")
+    temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+    help.update_JSON(auto_complete_config, temp_config_path)
+
+    help.verbose_print("Done")
+
+def check_to_reload_auto_complete_config(optional_path):
+    global auto_complete_config, auto_complete_config_name
+    if not optional_path or optional_path == "":
+        if not settings_json["batch_folder"] in auto_complete_config_name:
+            auto_config_path = os.path.join(cwd, "auto_configs")
+            auto_complete_config_name = f"auto_complete_{settings_json['batch_folder']}.json"
+            temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+            if not os.path.exists(auto_config_path):
+                os.makedirs(auto_config_path)
+            # load if data present / create if file not yet created
+            auto_complete_config = help.load_session_config(temp_config_path)
+    else:
+        if not settings_json["batch_folder"] in optional_path:
+            help.eprint("CURRENT LOADED BATCH FOLDER NOT PRESENT IN SPECIFIED PATH!!!")
+            auto_config_path = os.path.join(cwd, "auto_configs")
+            temp = '\\' if help.is_windows() else '/'
+            auto_complete_config_name = optional_path.split(temp)[-1]
+            temp_config_path = os.path.join(auto_config_path, auto_complete_config_name)
+            if not os.path.exists(auto_config_path):
+                os.makedirs(auto_config_path)
+            # load if data present / create if file not yet created
+            auto_complete_config = help.load_session_config(temp_config_path)
+
+def filter_out():
+    temp_key_list = list(all_images_dict.keys())
+    temp_tag_freq_table = {}
+
+    if "searched" in temp_key_list:
+        for ext in list(all_images_dict["searched"].keys()):
+            for img_id in list(all_images_dict["searched"][ext].keys()):
+                if not img_id in list(auto_complete_config.keys()):
+                    # generate frequency table for images being removed
+                    # no frequency table here to prevent duplicates
+                    # delete entry
+                    del all_images_dict["searched"][ext][img_id]
+        temp_key_list.remove("searched")
+
+    for ext in temp_key_list:
+        for img_id in list(all_images_dict[ext].keys()):
+            if not img_id in list(auto_complete_config.keys()):
+                # generate frequency table for images being removed
+                for tag in all_images_dict[ext][img_id]:
+                    if not tag in list(temp_tag_freq_table.keys()):
+                        temp_tag_freq_table[tag] = 1
+                    else:
+                        temp_tag_freq_table[tag] += 1
+                # delete entry
+                del all_images_dict[ext][img_id]
+
+    # remove all tags from the csvs
+    for tag in list(temp_tag_freq_table.keys()):
+        category_key = get_category_name(tag)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+            # edit csv dictionaries
+            remove_to_csv_dictionaries(category_key, tag, temp_tag_freq_table[tag])
+    #persist
+    csv_persist_to_disk()
+
+###
+# update_per_image -> ['-', tag] or ['+', tag, index]
+###
+def apply_stack_changes():
+    temp_key_list = list(all_images_dict.keys())
+    temp_tag_freq_table = {}
+
+    if "searched" in temp_key_list:
+        # clear searched dict
+        del all_images_dict["searched"]
+        all_images_dict["searched"] = {}
+        temp_key_list.remove("searched")
+
+    for ext in temp_key_list:
+        for img_id in list(auto_complete_config.keys()):
+            for update in auto_complete_config[img_id]:
+                if '-' in update: # remove
+                    tag = update[-1]
+                    all_images_dict[ext][img_id].remove(tag)
+                    if not tag in list(temp_tag_freq_table.keys()):
+                        temp_tag_freq_table[tag] = -1
+                    else:
+                        temp_tag_freq_table[tag] -= 1
+                else: # add
+                    tag = update[1]
+                    index = update[-1]
+                    all_images_dict[ext][img_id].insert(index, tag)
+                    if not tag in list(temp_tag_freq_table.keys()):
+                        temp_tag_freq_table[tag] = 1
+                    else:
+                        temp_tag_freq_table[tag] += 1
+
+    # create an add and remove frequency table
+    positive_table = {}
+    negative_table = {}
+    for tag in list(temp_tag_freq_table.keys()):
+        if temp_tag_freq_table[tag] > 0:
+            positive_table[tag] = temp_tag_freq_table[tag]
+        elif temp_tag_freq_table[tag] < 0:
+            negative_table[tag] = temp_tag_freq_table[tag]
+    # add to csvs
+    for tag in list(positive_table.keys()):
+        category_key = get_category_name(tag)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+            add_to_csv_dictionaries(category_key, tag, positive_table[tag])
+    # remove to csvs
+    for tag in list(negative_table.keys()):
+        category_key = get_category_name(tag)
+        if category_key:
+            help.verbose_print(f"category_key:\t{category_key}\tand\ttag:\t{tag}")
+            remove_to_csv_dictionaries(category_key, tag, negative_table[tag])
+
+    #persist
+    csv_persist_to_disk()
+    full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
+    for ext in list(all_images_dict.keys()):
+        for img_id in list(all_images_dict[ext].keys()):
+            full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
+            full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
+            temp_tag_string = ",".join(all_images_dict[ext][img_id])
+            help.write_tags_to_text_file(temp_tag_string, full_path)  # update img txt file
+    help.verbose_print("Done")
+
+def auto_config_apply(images_full_change_dict_textbox):
+    global auto_complete_config
+    # load correct config
+    check_to_reload_auto_complete_config(images_full_change_dict_textbox)
+
+    # load the csvs if not already loaded and the image dictionaries
+    load_images_and_csvs()
+
+    # filter out invalid images & update CSVs
+    filter_out()
+
+    # apply every in order image change & update CSVs & save image changes
+    apply_stack_changes()
 
 '''
 ##################################################################################################################################
@@ -1110,8 +1410,9 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         gr.Markdown(
         """
         ### Make sure all necessary dependencies have been installed.
-        ### Questions about certain features can be found here: https://github.com/pikaflufftuft/pikaft-e621-posts-downloader
-        ### This UI currently works in the case of ( SINGLE ) batch configurations
+        ### Questions about certain features can be found here: https://github.com/pikaflufftuft/pikaft-e621-posts-downloader.
+        ### This UI currently works in the case of ( SINGLE ) batch configurations.
+        ### Note: Tag/s appended/prepended and/or replaced are not included in the "GALLERY Preview" if they are not in the "category" relative tag files.
         """)
         with gr.Row():
             with gr.Column():
@@ -1131,7 +1432,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             with gr.Column():
                 settings_path = gr.Textbox(lines=1, label='Path to JSON (REQUIRED)', value=config_name)
             create_new_config_checkbox = gr.Checkbox(label="Create NEW Config", value=False)
-            temp = '\\' if is_windows() else '/'
+            temp = '\\' if help.is_windows() else '/'
             quick_json_select = gr.Dropdown(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]), label='JSON Select',
                                       value=config_name)
             load_json_file_button = gr.Button(value="Load from JSON", variant='secondary')
@@ -1166,19 +1467,19 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 """
                 ### Data Collection Options
                 """)
-                collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=grab_pre_selected(settings_json, collect_checkboxes))
+                collect_checkbox_group_var = gr.CheckboxGroup(choices=collect_checkboxes, label='Collect Checkboxes', value=help.grab_pre_selected(settings_json, collect_checkboxes))
             with gr.Column():
                 gr.Markdown(
                 """
                 ###  Data Download Options
                 """)
-                download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=grab_pre_selected(settings_json, download_checkboxes))
+                download_checkbox_group_var = gr.CheckboxGroup(choices=download_checkboxes, label='Download Checkboxes', value=help.grab_pre_selected(settings_json, download_checkboxes))
             with gr.Column():
                 gr.Markdown(
                 """
                 ###  Data Resize Options
                 """)
-                resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=grab_pre_selected(settings_json, resize_checkboxes))
+                resize_checkbox_group_var = gr.CheckboxGroup(choices=resize_checkboxes, label='Resize Checkboxes', value=help.grab_pre_selected(settings_json, resize_checkboxes))
 
     with gr.Tab("Required Tags Config"):
         with gr.Row():
@@ -1212,6 +1513,11 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         ### By DEFAULT the: Path to negative tags file is filled in. Edit or remove file and/or tags as necessary.
         ### Tags specified in the negative tag file, removes all tag instances from images (when downloaded).
         ### Please see the "Table" in https://github.com/pikaflufftuft/pikaft-e621-posts-downloader for more information.
+        ### Prepend text radio button options are ONLY used when the keyword for the search is not specified.
+        ### Note: Tag/s appended/prepended and/or replaced are not included in the "GALLERY Preview" if they are not in the "category" relative tag files.
+        ### To replace Tags with the file, they must follow the format of the first tag as the keyword, then after the first comma will be all replacement tag/s.
+        ### Only ONE search keyword per line. (Remove and Replace button effects are Permanent!)
+        ### The user can manually remove tags from batched images in the "Preview Gallery" w/ the search bar and selected the searched checkbox option for tag deletion.
         """)
         with gr.Row():
             config_save_var5 = gr.Button(value="Apply & Save Settings", variant='primary')
@@ -1241,11 +1547,34 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             swf_folder = gr.Textbox(lines=1, label='Path for swf data', value=settings_json["swf_folder"])
         with gr.Row():
             save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
-            remove_tags_list = gr.Textbox(lines=1, label='Path to negative tags file', value=settings_json["remove_tags_list"])
-            replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
+            remove_tags_list = gr.Textbox(lines=1, label='Path to negative tags file', value="")#settings_json["remove_tags_list"])
+            replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value="")#settings_json["replace_tags_list"])
             tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
-
+        with gr.Row():
+            remove_now_button = gr.Button(value="Remove Now", variant='primary')
+            replace_now_button = gr.Button(value="Replace Now", variant='primary')
+        with gr.Row():
+            keyword_search_text = gr.Textbox(lines=1, label='Keyword/Tag to Search (Optional)')
+            prepend_text = gr.Textbox(lines=1, label='Text to Prepend')
+            prepend_option = gr.Radio(choices=["Start", "End"], label='Prepend/Append Text To:', value="Start")
+        with gr.Row():
+            prepend_now_button = gr.Button(value="Prepend/Append Now", variant='primary')
     with gr.Tab("Run Tab"):
+        gr.Markdown(
+        """
+        ### By DEFAULT the: Path to Image Full Change Log JSON (Optional) text field is BLANK. 
+        ### This file is generated from tag and/or image changes in the Image Gallery tab "after" downloading.
+        ### The process runs for post-processing and ONLY starts tracking add/remove tag and/or image changes done after the backend script gets run.
+        ### This includes any interaction with the webui.
+        ### Settings used prior to the post-processing step with this file must be identical to the original from when it was created.
+        ### This is due to the file tracking the respective changes only with the webui, so anything before that step with the backend script is assumed to be correct.
+        ### Or in other words, ONLY interactions with the webui that "instantly" adds and/or removes tag/s and/or image/s get saved.
+        ### (NOTE) A new file tracking config "WILL" be created if the batch name is changed, e.g. places that could happen:
+        ### ----> at start
+        ### ----> when saving a new batch name
+        ### ----> when loading new config
+        ### ----> when saving new config
+        """)
         with gr.Row():
             with gr.Column():
                 basefolder = gr.Textbox(lines=1, label='Root Output Dir Path', value=cwd)
@@ -1264,6 +1593,9 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             tagsparquet = gr.Textbox(lines=1, label='Path to e6 tags parquet', value="")
             aria2cpath = gr.Textbox(lines=1, label='Path to aria2c program', value="")
         with gr.Row():
+            images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
+                                                         value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
+        with gr.Row():
             run_button = gr.Button(value="Run", variant='primary')
         with gr.Row():
             progress_bar_textbox_collect = gr.Textbox(interactive=False, visible=False)
@@ -1273,7 +1605,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             progress_bar_textbox_resize = gr.Textbox(interactive=False, visible=False)
         with gr.Accordion("Batch Run"):
             with gr.Row():
-                temp = '\\' if is_windows() else '/'
+                temp = '\\' if help.is_windows() else '/'
                 all_json_files_checkboxgroup = gr.CheckboxGroup(choices=sorted([(each_settings_file.split(temp)[-1]) for each_settings_file in glob.glob(os.path.join(cwd, f"*.json"))]),
                                                                 label='Select to Run', value=[])
             with gr.Row():
@@ -1281,6 +1613,13 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             with gr.Row():
                 progress_run_batch = gr.Textbox(interactive=False, visible=False)
     with gr.Tab("Image Preview Gallery"):
+        gr.Markdown(
+        """
+        ### The square checkboxes are used to do batch calculations, e.g. searching tag/s, adding and removing.
+        ### (USER MUST SELECT AT LEAST ONE CHECKBOX) if searching.
+        ### TAGS WITHOUT A CATEGORY ARE NOT DISPLAYED e.g. tag/s added with the append, prepend, replace Option (if they are also not in a "category" csv).
+        ### ALL images "SEARCHED" can be deleted if checkbox option is selected; otherwise it is single image deletions.
+        """)
         with gr.Row():
             with gr.Column():
                 with gr.Row():
@@ -1291,9 +1630,11 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 with gr.Row():
                     apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
                 with gr.Row():
-                    tag_remove_button = gr.Button(value="Remove Selected", variant='primary')
-                    tag_save_button = gr.Button(value="Save Changes", variant='primary')
-
+                    tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
+                    tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
+                with gr.Row():
+                    image_remove_button = gr.Button(value="Remove Selected Image/s", variant='primary')
+                    image_save_ids_button = gr.Button(value="Save Image Changes", variant='primary')
                 with gr.Row():
                     tag_add_artist_textbox = gr.Textbox(label="Artist: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_artist_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Artist Tag/s', value=[])
@@ -1312,7 +1653,6 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 with gr.Row():
                     tag_add_rating_textbox = gr.Textbox(label="Rating: Press Enter to ADD tag/s (E.g. tag1 or tag1, tag2, ..., etc.)", lines=1, value="")
                 img_rating_tag_checkbox_group = gr.CheckboxGroup(choices=[], label='Rating Tag/s', value=[])
-
 
             gallery_comp = gr.Gallery(visible=False, elem_id="gallery").style(grid=[3], height="auto")
     with gr.Tab("Data Stats"):
@@ -1337,6 +1677,17 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
     ####################################################     EVENT HANDLER/S     #####################################################
     ##################################################################################################################################
     '''
+
+    remove_now_button.click(fn=remove_from_all, inputs=[remove_tags_list], outputs=[])
+    replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list], outputs=[])
+    prepend_now_button.click(fn=prepend_with_keyword, inputs=[keyword_search_text, prepend_text, prepend_option], outputs=[])
+
+    image_remove_button.click(fn=remove_images, inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox],
+                              outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,
+                                       img_species_tag_checkbox_group,img_general_tag_checkbox_group,
+                                       img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,gallery_comp,
+                                       img_id_textbox])
+    image_save_ids_button.click(fn=save_image_changes, inputs=[], outputs=[])
 
     stats_run_button.click(fn=run_stats, inputs=[stats_run_options, stats_load_file], outputs=[stats_selected_data])
 
@@ -1383,7 +1734,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 skip_posts_type,collect_from_listed_posts_file,collect_from_listed_posts_type,
                 apply_filter_to_listed_posts,save_searched_list_type,save_searched_list_path,downloaded_posts_folder,
                 png_folder,jpg_folder,webm_folder,gif_folder,swf_folder,save_filename_type,remove_tags_list,
-                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select])
+                replace_tags_list,tag_count_list_folder,all_json_files_checkboxgroup,quick_json_select]).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
     config_save_var0.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
@@ -1396,7 +1747,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[all_json_files_checkboxgroup]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
     config_save_var1.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
@@ -1408,7 +1759,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
     config_save_var2.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
@@ -1420,7 +1771,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
     config_save_var3.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
@@ -1432,7 +1783,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
     config_save_var4.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
@@ -1444,7 +1795,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
     config_save_var5.click(fn=config_save_button,
                           inputs=[batch_folder,resized_img_folder,tag_sep,tag_order_format,prepend_tags,append_tags,
                                   img_ext,method_tag_files,min_score,min_fav_count,min_area,top_n,
@@ -1456,15 +1807,16 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   min_day,min_year,collect_checkbox_group_var,download_checkbox_group_var,resize_checkbox_group_var,create_new_config_checkbox,settings_path
                                   ],
                           outputs=[]
-                          )
+                          ).then(fn=check_to_reload_auto_complete_config, inputs=[], outputs=[])
 
     run_button.click(fn=run_script,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath],
                      outputs=[]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=data_collect, inputs=[],
                      outputs=[progress_bar_textbox_collect]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_download]).then(fn=data_download, inputs=[],
                      outputs=[progress_bar_textbox_download]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_resize]).then(fn=data_resize, inputs=[resize_checkbox_group_var],
-                     outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[])
+                     outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[]).then(fn=auto_config_apply, inputs=[images_full_change_dict_textbox], outputs=[])
 
-    run_button_batch.click(fn=make_run_visible,inputs=[],outputs=[progress_run_batch]).then(fn=run_script_batch,inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath,all_json_files_checkboxgroup],
+    run_button_batch.click(fn=make_run_visible,inputs=[],outputs=[progress_run_batch]).then(fn=run_script_batch,
+                     inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath,all_json_files_checkboxgroup,images_full_change_dict_textbox],
                      outputs=[progress_run_batch])
 
     required_tags.submit(fn=textbox_handler_required, inputs=[required_tags], outputs=[required_tags,required_tags_group_var])
