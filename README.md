@@ -14,10 +14,14 @@
 - Easy to use Tag Editor
 - Tag statistics tab
 
-## Features (soon)
+## Features (JUST ADDED! (04-23-2023))
 
-- New image & tag file removal method, to create a blacklist of purely image IDs saved to a file for later use (e.g. training on cloud computing resources)
-- Additional tag information provided e.g. date posted & image ratio tags
+- A feature that tracks changes for images that are downloaded and saves them to a file; additionally tracking tag/s added removed to images as well as the images themselves being removed. The file generated can be used to instantly filter images & tags to match those exact changes later on. (runs automatically after the backend script finishes running)
+- A button, search bar, and selection box for appending and/or prepending text/tags based on a searched tag
+- A button for replacing text/tags automatically with provided text files
+- A button for removing images individually and/or batched
+- A button to apply the persist the changes to Disk
+--- additional notes have been added to the headers of some of the Tabs as well
 
 ## Features (later)
 
