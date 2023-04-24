@@ -332,10 +332,10 @@ def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=Fal
             path += ".json"
 
         e6_downloader = e621_batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
-
-        settings_json = help.load_session_config(path)
-        # apply post-processing
-        auto_config_apply(images_full_change_dict_textbox)
+        #
+        # settings_json = help.load_session_config(path)
+        # # apply post-processing
+        # auto_config_apply(images_full_change_dict_textbox)
         del e6_downloader
     return gr.update(interactive=False, visible=False)
 
@@ -1603,6 +1603,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         ### ----> when saving a new batch name
         ### ----> when loading new config
         ### ----> when saving new config
+        ### After downloading images, OPTIONALLY use the Post-Processing Run Button to apply all additional changes to the images.
         """)
         with gr.Row():
             with gr.Column():
@@ -1624,6 +1625,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         with gr.Row():
             images_full_change_dict_textbox = gr.Textbox(lines=1, label='Path to Image Full Change Log JSON (Optional)',
                                                          value=os.path.join(auto_config_path, f"auto_complete_{settings_json['batch_folder']}.json"))
+            images_full_change_dict_run_button = gr.Button(value="(POST-PROCESSING only) Apply Auto-Config Update Changes", variant='secondary')
         with gr.Row():
             run_button = gr.Button(value="Run", variant='primary')
         with gr.Row():
@@ -1707,6 +1709,8 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
     ####################################################     EVENT HANDLER/S     #####################################################
     ##################################################################################################################################
     '''
+
+    images_full_change_dict_run_button.click(fn=auto_config_apply, inputs=[images_full_change_dict_textbox], outputs=[])
 
     remove_now_button.click(fn=remove_from_all, inputs=[remove_tags_list], outputs=[])
     replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list], outputs=[])
@@ -1843,7 +1847,7 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                      outputs=[]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=data_collect, inputs=[],
                      outputs=[progress_bar_textbox_collect]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_download]).then(fn=data_download, inputs=[],
                      outputs=[progress_bar_textbox_download]).then(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_resize]).then(fn=data_resize, inputs=[resize_checkbox_group_var],
-                     outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[]).then(fn=auto_config_apply, inputs=[images_full_change_dict_textbox], outputs=[])
+                     outputs=[progress_bar_textbox_resize]).then(fn=end_connection,inputs=[],outputs=[])
 
     run_button_batch.click(fn=make_run_visible,inputs=[],outputs=[progress_run_batch]).then(fn=run_script_batch,
                      inputs=[basefolder,settings_path,numcpu,phaseperbatch,keepdb,cachepostsdb,postscsv,tagscsv,postsparquet,tagsparquet,aria2cpath,all_json_files_checkboxgroup,images_full_change_dict_textbox],
