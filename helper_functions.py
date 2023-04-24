@@ -173,7 +173,7 @@ def write_tags_to_csv(dictionary, file_path):
     with open(file_path, 'w') as file:
         file.write(f"{header_string}\n")
         for pair in sort_dictionary_to_list:
-            file.write(f"{pair[0]},{pair[1]}")
+            file.write(f"{pair[0]},{pair[1]}\n")
     file.close()
 
 def update_all_csv_dictionaries(artist_csv_dict, character_csv_dict, species_csv_dict, general_csv_dict, meta_csv_dict,
@@ -182,58 +182,37 @@ def update_all_csv_dictionaries(artist_csv_dict, character_csv_dict, species_csv
         if tag in list(artist_csv_dict.keys()):
             artist_csv_dict[tag] = ops[op](artist_csv_dict[tag], count)
         else:
-            if artist_csv_dict[tag] == 0:
-                del artist_csv_dict[tag]
-            else:
-                artist_csv_dict[tag] = 1
+            artist_csv_dict[tag] = ops[op](0, count)
     if string_category in "character":
         if tag in list(character_csv_dict.keys()):
             character_csv_dict[tag] = ops[op](character_csv_dict[tag], count)
         else:
-            if character_csv_dict[tag] == 0:
-                del character_csv_dict[tag]
-            else:
-                character_csv_dict[tag] = 1
+            character_csv_dict[tag] = ops[op](0, count)
     if string_category in "species":
         if tag in list(species_csv_dict.keys()):
             species_csv_dict[tag] = ops[op](species_csv_dict[tag], count)
         else:
-            if species_csv_dict[tag] == 0:
-                del species_csv_dict[tag]
-            else:
-                species_csv_dict[tag] = 1
+            species_csv_dict[tag] = ops[op](0, count)
     if string_category in "general":
         if tag in list(general_csv_dict.keys()):
             general_csv_dict[tag] = ops[op](general_csv_dict[tag], count)
         else:
-            if general_csv_dict[tag] == 0:
-                del general_csv_dict[tag]
-            else:
-                general_csv_dict[tag] = 1
+            general_csv_dict[tag] = ops[op](0, count)
     if string_category in "meta":
         if tag in list(meta_csv_dict.keys()):
             meta_csv_dict[tag] = ops[op](meta_csv_dict[tag], count)
         else:
-            if meta_csv_dict[tag] == 0:
-                del meta_csv_dict[tag]
-            else:
-                meta_csv_dict[tag] = 1
+            meta_csv_dict[tag] = ops[op](0, count)
     if string_category in "rating":
         if tag in list(rating_csv_dict.keys()):
             rating_csv_dict[tag] = ops[op](rating_csv_dict[tag], count)
         else:
-            if rating_csv_dict[tag] == 0:
-                del rating_csv_dict[tag]
-            else:
-                rating_csv_dict[tag] = 1
+            rating_csv_dict[tag] = ops[op](0, count)
     # change the global tag csv
     if tag in list(tags_csv_dict.keys()):
         tags_csv_dict[tag] = ops[op](tags_csv_dict[tag], count)
     else:
-        if tags_csv_dict[tag] == 0:
-            del tags_csv_dict[tag]
-        else:
-            tags_csv_dict[tag] = 1
+        tags_csv_dict[tag] = ops[op](0, count)
 
     return artist_csv_dict.copy(), character_csv_dict.copy(), species_csv_dict.copy(), general_csv_dict.copy(), \
            meta_csv_dict.copy(), rating_csv_dict.copy(), tags_csv_dict.copy()
