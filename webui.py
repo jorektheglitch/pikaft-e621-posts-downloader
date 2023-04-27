@@ -1639,6 +1639,7 @@ def download_repos(repo_download_checkbox_group):
                 help.verbose_print(line)
             # finally unzip the file
             command_str = "unzip "
+            url_path = "deepdanbooru-v3-20211112-sgd-e28.zip"
             command_str = f"{command_str}{url_path}"
             help.verbose_print(f"unzipping zip of model:\t{repo_name}")
             for line in help.execute(command_str.split(" ")):
@@ -1657,6 +1658,7 @@ def download_repos(repo_download_checkbox_group):
             help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
+        help.verbose_print(f"Done")
 
 def download_models(model_download_types, model_download_checkbox_group):
     for model_name in model_download_checkbox_group:
@@ -1667,6 +1669,7 @@ def download_models(model_download_types, model_download_checkbox_group):
         help.verbose_print(f"DOWNLOADING:\t{model_name}")
         for line in help.execute(command_str.split(" ")):
             help.verbose_print(line)
+        help.verbose_print(f"Done")
 
 def show_model_downloads_options(model_download_types):
     model_download_checkbox_group = gr.update(choices=help.get_model_names(model_download_types), visible=True)
