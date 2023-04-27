@@ -4,3 +4,4 @@ requests
 tqdm
 pyarrow
 gradio == 3.23.0
+beautifulsoup4
