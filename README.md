@@ -13,8 +13,15 @@
 - Gallery preview w/ search capability
 - Easy to use Tag Editor
 - Tag statistics tab
+- Download relevant repos & pre-trained model/s tab
 
-## Features (JUST ADDED! (04-23-2023))
+## Newest Features
+
+#### (JUST ADDED! (04-26-2023))
+
+- Download relevant repos & pre-trained model/s tab
+
+#### (04-23-2023)
 
 - Progress Bars for auto-config apply button for post-processing all images
 - A feature that tracks changes for images that are downloaded and saves them to a file; additionally tracking tag/s added removed to images as well as the images themselves being removed. The file generated can be used to instantly filter images & tags to match those exact changes later on. (runs automatically after the backend script finishes running)
@@ -24,7 +31,7 @@
 - A button to apply the persist the changes to Disk
 --- additional notes have been added to the headers of some of the Tabs as well
 
-## Features (later)
+### Features (later)
 
 - Tag auto-completion
 
