@@ -309,5 +309,5 @@ def full_model_download_link(name, file_name):
         url = "https://static.treehaus.dev/"
         return f"{url}{file_name}"
     elif name == "FluffyRock":
-        url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
+        url = "https://huggingface.co/lodestones/furryrock-model-safetensors/resolve/main/"
         return f"{url}{file_name}"
