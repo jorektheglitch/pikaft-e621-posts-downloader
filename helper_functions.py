@@ -5,6 +5,8 @@ import os
 import subprocess as sub
 import operator
 import sys
+import requests
+from bs4 import BeautifulSoup
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -16,6 +18,9 @@ ops = {'+': operator.add, '-': operator.sub}
 
 def verbose_print(text):
     print(f"{text}")
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 def load_session_config(f_name):
     session_config = None
@@ -239,5 +244,70 @@ def get_text_file_data(file_path, tag_per_line):
         read_file.close()
     return all_tags
 
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
+def get_href_links(url):
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = soup.find_all('a')
+
+        href_links = []
+        for link in links:
+            href = link.get('href')
+            if href:
+                href_links.append(href)
+
+        return href_links
+    else:
+        print(f"Request to {url} failed with status code: {response.status_code}")
+        return []
+
+model_download_options = ["Fluffusion", "FluffyRock"]
+
+def get_fluffyrock_models():
+    # get all model names
+    url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
+    href_links = get_href_links(url)
+    temp_list = set()
+    for href_link in href_links:
+        if "/" in href_link:
+            temp_list.add(href_link.split("/")[-1])
+        else:
+            temp_list.add(href_link)
+    # filter out non-safetensor files
+    temp_list = list(temp_list)
+    for i in range(len(temp_list) - 1, -1, -1):
+        if not "safetensors" in (temp_list[i]).split(".")[-1]:
+            temp_list.remove(temp_list[i])
+    return temp_list
+
+def get_fluffusion_models():
+    # get all model names
+    url = "https://static.treehaus.dev/"
+    href_links = get_href_links(url)
+    temp_list = set()
+    for href_link in href_links:
+        if "/" in href_link:
+            temp_list.add(href_link.split("/")[-1])
+        else:
+            temp_list.add(href_link)
+    # filter out fluffyrock models
+    temp_list = list(temp_list)
+    for i in range(len(temp_list)-1, -1, -1):
+        if (model_download_options[-1]).lower() in temp_list[i] or not "ckpt" in (temp_list[i]).split(".")[-1]:
+            temp_list.remove(temp_list[i])
+    return temp_list
+
+def get_model_names(name):
+    if name == "Fluffusion":
+        return get_fluffusion_models()
+    elif name == "FluffyRock":
+        return get_fluffyrock_models()
+
+def full_model_download_link(name, file_name):
+    if name == "Fluffusion":
+        url = "https://static.treehaus.dev/"
+        return f"{url}{file_name}"
+    elif name == "FluffyRock":
+        url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
+        return f"{url}{file_name}"

@@ -1613,6 +1613,66 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
     else:
         raise ValueError('no path name specified | no config created | config empty')
 
+def download_repos(repo_download_checkbox_group):
+    for repo_name in repo_download_checkbox_group:
+        command_str = "git clone --progress "
+        if "kohya" in repo_name.lower():
+            # get full url path
+            url_path = "https://github.com/bmaltais/kohya_ss.git"
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+        elif "tag" in repo_name.lower():
+            # get full url path
+            url_path = "https://github.com/KichangKim/DeepDanbooru.git"
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+            # also install the latest pre-trained model
+            command_str = "wget -q --show-progress "
+            url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+            # finally unzip the file
+            command_str = "unzip "
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"unzipping zip of model:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+        elif "webui" in repo_name.lower():
+            # get full url path
+            url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+        elif "invoke" in repo_name.lower():
+            # get full url path
+            url_path = "https://github.com/invoke-ai/InvokeAI.git"
+            command_str = f"{command_str}{url_path}"
+            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
+
+def download_models(model_download_types, model_download_checkbox_group):
+    for model_name in model_download_checkbox_group:
+        command_str = "wget -q --show-progress "
+        # get full url path
+        url_path = help.full_model_download_link(model_download_types, model_name)
+        command_str = f"{command_str}{url_path}"
+        help.verbose_print(f"DOWNLOADING:\t{model_name}")
+        for line in help.execute(command_str.split(" ")):
+            help.verbose_print(line)
+
+def show_model_downloads_options(model_download_types):
+    model_download_checkbox_group = gr.update(choices=help.get_model_names(model_download_types), visible=True)
+    model_download_button = gr.update(visible=True)
+    return model_download_checkbox_group, model_download_button
+
 '''
 ##################################################################################################################################
 #######################################################     GUI BLOCKS     #######################################################
@@ -1895,12 +1955,30 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             tb_4 = gr.Textbox(visible=False, interactive=False, value="general")
             tb_5 = gr.Textbox(visible=False, interactive=False, value="meta")
             tb_6 = gr.Textbox(visible=False, interactive=False, value="rating")
-
+    with gr.Tab("Download Extra/s: Model/s & Code Repos"):
+        gr.Markdown(
+        """
+        ### Here you can download pre-trained stable diffusion models for your training and/or generation purposes.
+        ### In addition, you can download several different repos to help set up for these ^^^ purposes. 
+        """)
+        with gr.Column():
+            repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI"]
+            repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Select ALL Code Repositories to Download', value=[])
+            repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
+        with gr.Column():
+            model_download_options = ["Fluffusion", "FluffyRock"]
+            model_download_types = gr.Dropdown(choices=model_download_options, label='Model Selection', value=settings_json["img_ext"])
+            model_download_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Code Repositories to Download', value=[], visible=False)
+            model_download_button = gr.Button(value="Download Model/s", variant='primary', visible=False)
     '''
     ##################################################################################################################################
     ####################################################     EVENT HANDLER/S     #####################################################
     ##################################################################################################################################
     '''
+
+    repo_download_button.click(fn=download_repos, inputs=[repo_download_checkbox_group], outputs=[])
+    model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types], outputs=[model_download_checkbox_group, model_download_button])
+    model_download_button.click(fn=download_models, inputs=[model_download_types, model_download_checkbox_group], outputs=[])
 
     images_full_change_dict_run_button.click(fn=make_run_visible,inputs=[],outputs=[progress_bar_textbox_collect]).then(fn=auto_config_apply,
             inputs=[images_full_change_dict_textbox], outputs=[progress_bar_textbox_collect])
