@@ -1768,8 +1768,8 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
             swf_folder = gr.Textbox(lines=1, label='Path for swf data', value=settings_json["swf_folder"])
         with gr.Row():
             save_filename_type = gr.Radio(choices=["id","md5"], label='Select Filename Type', value=settings_json["save_filename_type"])
-            remove_tags_list = gr.Textbox(lines=1, label='Path to negative tags file', value="")#settings_json["remove_tags_list"])
-            replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value="")#settings_json["replace_tags_list"])
+            remove_tags_list = gr.Textbox(lines=1, label='Path to negative tags file', value=settings_json["remove_tags_list"])
+            replace_tags_list = gr.Textbox(lines=1, label='Path to replace tags file', value=settings_json["replace_tags_list"])
             tag_count_list_folder = gr.Textbox(lines=1, label='Path to tag count file', value=settings_json["tag_count_list_folder"])
         with gr.Row():
             remove_now_button = gr.Button(value="Remove Now", variant='primary')
