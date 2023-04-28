@@ -1284,7 +1284,7 @@ def remove_from_all(file_path):
                     while tag in all_images_dict[img_type][every_image]:
                         all_images_dict[img_type][every_image].remove(tag)
 
-                        if not every_image in auto_complete_config[img_type]:
+                        if not every_image in auto_complete_config[img_type]:#################################TypeError: 'NoneType' object is not subscriptable---- since auto_complete_config was NULL and the file was empty!!!!!!!!!!!!!!!!!!!!!! and not saving anything to it the entire time!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                             auto_complete_config[img_type][every_image] = []
                         auto_complete_config[img_type][every_image].append(['-', tag])
     # persist changes
@@ -1438,6 +1438,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
 
 def check_to_reload_auto_complete_config(optional_path=None):
     global auto_complete_config, auto_complete_config_name
+    temp_config_path = ""
     if not optional_path or optional_path == "":
         if not settings_json["batch_folder"] in auto_complete_config_name:
             auto_config_path = os.path.join(cwd, "auto_configs")
@@ -1460,6 +1461,11 @@ def check_to_reload_auto_complete_config(optional_path=None):
                 os.makedirs(auto_config_path)
             # load if data present / create if file not yet created
             auto_complete_config = help.load_session_config(temp_config_path)
+
+    # if empty add default entries
+    if not auto_complete_config:
+        auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
+        help.update_JSON(auto_complete_config, temp_config_path)
 
 def filter_out():
     global all_images_dict
