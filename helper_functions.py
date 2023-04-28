@@ -7,6 +7,7 @@ import operator
 import sys
 import requests
 from bs4 import BeautifulSoup
+from dateutil.parser import parse
 
 ops = {'+': operator.add, '-': operator.sub}
 
@@ -262,24 +263,57 @@ def get_href_links(url):
         print(f"Request to {url} failed with status code: {response.status_code}")
         return []
 
+
+def extract_time_and_href(url):
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Assuming that the list elements are wrapped within a <ul> or <ol> tag.
+        list_elements = soup.find_all(['li', 'ol'])
+
+        results = []
+
+        for element in list_elements:
+            link = element.find('a')
+            time_element = element.find('time')
+
+            if link and time_element:
+                href = link.get('href')
+                time_value = time_element.get('datetime') or time_element.text
+                time_object = parse(time_value)
+                results.append([href, time_object])
+
+        # Sort the results based on datetime object, newest to oldest
+        sorted_results = sorted(results, key=lambda x: x[-1], reverse=True)
+
+        return sorted_results
+    else:
+        print(f"Request to {url} failed with status code: {response.status_code}")
+        return []
+
 model_download_options = ["Fluffusion", "FluffyRock"]
 
 def get_fluffyrock_models():
     # get all model names
     url = "https://huggingface.co/lodestones/furryrock-model-safetensors/tree/main/"
-    href_links = get_href_links(url)
+    href_links = extract_time_and_href(url)
     temp_list = set()
     for href_link in href_links:
+        href_link, time_element = href_link
         if "/" in href_link:
-            temp_list.add(href_link.split("/")[-1])
+            temp_list.add(f'{href_link.split(" / ")[-1]}---{time_element}')
         else:
-            temp_list.add(href_link)
+            temp_list.add(f'{href_link}---{time_element}')
+        verbose_print(f"href_link:\t{href_link}\tand\ttime_element:\t{time_element}")
     # filter out non-safetensor files
     temp_list = list(temp_list)
     for i in range(len(temp_list) - 1, -1, -1):
         if not "safetensors" in (temp_list[i]).split(".")[-1]:
             temp_list.remove(temp_list[i])
-    return temp_list
+    sorted_results = sorted(temp_list, key=lambda x: (x.split('---'))[-1], reverse=True)
+    return sorted_results
 
 def get_fluffusion_models():
     # get all model names
@@ -291,12 +325,14 @@ def get_fluffusion_models():
             temp_list.add(href_link.split("/")[-1])
         else:
             temp_list.add(href_link)
+        verbose_print(f"href_link:\t{href_link}")
     # filter out fluffyrock models
     temp_list = list(temp_list)
     for i in range(len(temp_list)-1, -1, -1):
         if (model_download_options[-1]).lower() in temp_list[i] or not "ckpt" in (temp_list[i]).split(".")[-1]:
             temp_list.remove(temp_list[i])
-    return temp_list
+    sorted_results = sorted(temp_list, key=lambda x: x)
+    return sorted_results
 
 def get_model_names(name):
     if name == "Fluffusion":
@@ -310,4 +346,36 @@ def full_model_download_link(name, file_name):
         return f"{url}{file_name}"
     elif name == "FluffyRock":
         url = "https://huggingface.co/lodestones/furryrock-model-safetensors/resolve/main/"
-        return f"{url}{file_name}"
+        return f"{url}{(file_name.split('---')[0])}"
+
+def extract_time_and_href_github(api_url):
+    response = requests.get(api_url)
+    release_list = []
+
+    if response.status_code == 200:
+        releases = response.json()
+
+        for release in releases:
+            temp_list = []
+            temp_list.append(release['tag_name'])
+            print(f"Release: {release['tag_name']} - {release['html_url']}")
+            assets_url = release['assets_url']
+            assets_response = requests.get(assets_url)
+
+            if assets_response.status_code == 200:
+                assets = assets_response.json()
+                download_urls = [asset['browser_download_url'] for asset in assets]
+                temp_list.append(download_urls)
+                for url in download_urls:
+                    print(f"Download URL: {url}")
+            else:
+                print(
+                    f"Failed to fetch assets for release {release['tag_name']}. Status code: {assets_response.status_code}")
+                print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
+                temp_list.append([])
+            print()  # Add an empty line for better readability
+            release_list.append(temp_list)
+    else:
+        print("Failed to fetch the releases. Status code:", response.status_code)
+        print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")
+    return copy.deepcopy(release_list)

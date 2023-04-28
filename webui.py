@@ -101,6 +101,8 @@ if not auto_complete_config:
     auto_complete_config = {'png': {}, 'jpg': {}, 'gif': {}}
     help.update_JSON(auto_complete_config, temp_config_path)
 
+global repo_release_urls
+repo_release_urls = {}
 '''
 ##################################################################################################################################
 #################################################     COMPONENT/S FUNCTION/S     #################################################
@@ -1613,55 +1615,136 @@ def auto_config_apply(images_full_change_dict_textbox, progress=gr.Progress()):
     else:
         raise ValueError('no path name specified | no config created | config empty')
 
-def download_repos(repo_download_checkbox_group):
-    for repo_name in repo_download_checkbox_group:
-        command_str = "git clone --progress "
-        if "kohya" in repo_name.lower():
-            # get full url path
-            url_path = "https://github.com/bmaltais/kohya_ss.git"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-        elif "tag" in repo_name.lower():
-            # get full url path
-            url_path = "https://github.com/KichangKim/DeepDanbooru.git"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-            # also install the latest pre-trained model
+def download_repos(repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group):
+    if repo_download_releases_only:
+        for asset_url in release_assets_checkbox_group:
             command_str = "wget -q --show-progress "
-            url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
+            command_str = f"{command_str}{asset_url}"
+            help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
-            # finally unzip the file
-            command_str = "unzip "
-            url_path = "deepdanbooru-v3-20211112-sgd-e28.zip"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"unzipping zip of model:\t{repo_name}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-        elif "webui" in repo_name.lower():
-            # get full url path
-            url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-        elif "invoke" in repo_name.lower():
-            # get full url path
-            url_path = "https://github.com/invoke-ai/InvokeAI.git"
-            command_str = f"{command_str}{url_path}"
-            help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
-            for line in help.execute(command_str.split(" ")):
-                help.verbose_print(line)
-        help.verbose_print(f"Done")
+
+            if ".zip" in asset_url:
+                # finally unzip the file
+                command_str = "unzip "
+                command_str = f"{command_str}{(asset_url.split('/'))[-1]}"
+                help.verbose_print(f"unzipping zipping asset:\t{asset_url}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+    else:
+        for repo_name in repo_download_checkbox_group:
+            command_str = "git clone --progress "
+            if "kohya" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/bmaltais/kohya_ss.git"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+            elif "tag" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/KichangKim/DeepDanbooru.git"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+                # also install the latest pre-trained model
+                command_str = "wget -q --show-progress "
+                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+                # finally unzip the file
+                command_str = "unzip "
+                url_path = "deepdanbooru-v3-20211112-sgd-e28.zip"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"unzipping zip of model:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+            elif "webui" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+            elif "invoke" in repo_name.lower():
+                # get full url path
+                url_path = "https://github.com/invoke-ai/InvokeAI.git"
+                command_str = f"{command_str}{url_path}"
+                help.verbose_print(f"DOWNLOADING repo:\t{repo_name}")
+                for line in help.execute(command_str.split(" ")):
+                    help.verbose_print(line)
+            help.verbose_print(f"Done")
+
+def reload_release_options(repo_download_releases_only):
+    if repo_download_releases_only:
+        # make visible the radio options & hide the repo_download_checkbox_group options, repo_specific_release_options, and button
+        repo_download_checkbox_group = gr.update(visible=False)
+        release_options_radio = gr.update(visible=False)
+        repo_download_button = gr.update(visible=False)
+        release_assets_checkbox_group = gr.update(visible=False)
+        repo_download_radio = gr.update(visible=True)
+        return repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group
+    else:
+        # make visible the repo_download_checkbox_group options & button and hide the radio options & repo_specific_release_options
+        repo_download_checkbox_group = gr.update(visible=True)
+        release_options_radio = gr.update(value=[], visible=False)
+        repo_download_button = gr.update(visible=True)
+        repo_download_radio = gr.update(visible=False)
+        release_assets_checkbox_group = gr.update(visible=False)
+        return repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group
+
+def get_repo_releases(repo_download_radio, event_data: gr.SelectData):
+    global repo_release_urls
+    repo_release_urls = {}
+    # populate the release options list & make button visible
+    repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
+    url = None
+    release_options_radio_list = []
+
+    if event_data.value == repo_download_options_no_auto1111[0]:
+        owner = 'bmaltais'
+        repo = 'kohya_ss'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+    elif event_data.value == repo_download_options_no_auto1111[1]:
+        owner = 'KichangKim'
+        repo = 'DeepDanbooru'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+    elif event_data.value == repo_download_options_no_auto1111[2]:
+        owner = 'invoke-ai'
+        repo = 'InvokeAI'
+        url = f'https://api.github.com/repos/{owner}/{repo}/releases'
+
+    all_releases = help.extract_time_and_href_github(url) # list of lists containing [release name, list of downloads]
+    help.verbose_print(f"all_releases:\t{all_releases}")
+
+    for release in all_releases:
+        header_text, urls = release
+        release_options_radio_list.append(f"{header_text}")
+        repo_release_urls[header_text] = urls
+
+    release_options_radio = gr.update(choices=release_options_radio_list, visible=True, value=[])
+    return release_options_radio
+
+def get_repo_assets(release_options_radio, event_data: gr.SelectData):
+    global repo_release_urls
+    # get header text
+    header_text = (event_data.value)
+    # get assets available
+    help.verbose_print(f"repo_release_urls[header_text]:\t{repo_release_urls[header_text]}")
+    all_assets = repo_release_urls[header_text]
+    help.verbose_print(f"all_assets:\t{all_assets}")
+
+    repo_download_button = gr.update(visible=True)
+    release_assets_checkbox_group = gr.update(choices=all_assets, visible=True)
+    return repo_download_button, release_assets_checkbox_group
 
 def download_models(model_download_types, model_download_checkbox_group):
     for model_name in model_download_checkbox_group:
+        if "/" in model_name:
+            model_name = model_name.split("/")[-1]
         command_str = "wget -q --show-progress "
         # get full url path
         url_path = help.full_model_download_link(model_download_types, model_name)
@@ -1671,8 +1754,8 @@ def download_models(model_download_types, model_download_checkbox_group):
             help.verbose_print(line)
         help.verbose_print(f"Done")
 
-def show_model_downloads_options(model_download_types):
-    model_download_checkbox_group = gr.update(choices=help.get_model_names(model_download_types), visible=True)
+def show_model_downloads_options(model_download_types, event_data: gr.SelectData):
+    model_download_checkbox_group = gr.update(choices=help.get_model_names(event_data.value), visible=True)
     model_download_button = gr.update(visible=True)
     return model_download_checkbox_group, model_download_button
 
@@ -1966,7 +2049,17 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
         """)
         with gr.Column():
             repo_download_options = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "AUTO1111 WEBUI", "InvokeAI"]
+            repo_download_releases_only = gr.Checkbox(label='Select ALL Code Repositories to Download', value=False)
+
             repo_download_checkbox_group = gr.CheckboxGroup(choices=repo_download_options, label='Select ALL Code Repositories to Download', value=[])
+
+            repo_download_options_no_auto1111 = ["Kohya_ss LORA Trainer", "Auto-Tagging Model", "InvokeAI"]
+            repo_download_radio = gr.Radio(choices=repo_download_options_no_auto1111, label='Select ALL Code Repositories to Download', visible=False)
+
+            release_options_radio = gr.Radio(choices=[], label='Select ALL Releases to Download', visible=False)
+
+            release_assets_checkbox_group = gr.CheckboxGroup(choices=[], label='Select ALL Releases to Download', value=[], visible=False)
+
             repo_download_button = gr.Button(value="Download Repo/s", variant='primary')
         with gr.Column():
             model_download_options = ["Fluffusion", "FluffyRock"]
@@ -1979,7 +2072,12 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
     ##################################################################################################################################
     '''
 
-    repo_download_button.click(fn=download_repos, inputs=[repo_download_checkbox_group], outputs=[])
+    release_options_radio.select(fn=get_repo_assets, inputs=[release_options_radio], outputs=[repo_download_button, release_assets_checkbox_group])
+    repo_download_radio.select(fn=get_repo_releases, inputs=[repo_download_radio], outputs=[release_options_radio])
+    repo_download_releases_only.change(fn=reload_release_options, inputs=[repo_download_releases_only],
+                                       outputs=[repo_download_checkbox_group, repo_download_radio, release_options_radio, repo_download_button, release_assets_checkbox_group])
+
+    repo_download_button.click(fn=download_repos, inputs=[repo_download_releases_only, repo_download_checkbox_group, release_assets_checkbox_group], outputs=[])
     model_download_types.select(fn=show_model_downloads_options, inputs=[model_download_types], outputs=[model_download_checkbox_group, model_download_button])
     model_download_button.click(fn=download_models, inputs=[model_download_types, model_download_checkbox_group], outputs=[])
 
