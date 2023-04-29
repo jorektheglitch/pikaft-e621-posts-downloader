@@ -352,19 +352,28 @@ def extract_time_and_href_github(api_url):
     response = requests.get(api_url)
     release_list = []
 
+    # releases are already ordered most recent to oldest
+    # so take the first 5 to look at
+
     if response.status_code == 200:
         releases = response.json()
 
+        counter = 0
         for release in releases:
+            if counter >= 5:
+                break
             temp_list = []
             temp_list.append(release['tag_name'])
+
             print(f"Release: {release['tag_name']} - {release['html_url']}")
+            # Add source code archives to download URLs
+            download_urls = [release['zipball_url']]
             assets_url = release['assets_url']
             assets_response = requests.get(assets_url)
-
             if assets_response.status_code == 200:
                 assets = assets_response.json()
-                download_urls = [asset['browser_download_url'] for asset in assets]
+                asset_download_urls = [asset['browser_download_url'] for asset in assets]
+                download_urls.extend(asset_download_urls)
                 temp_list.append(download_urls)
                 for url in download_urls:
                     print(f"Download URL: {url}")
@@ -375,6 +384,7 @@ def extract_time_and_href_github(api_url):
                 temp_list.append([])
             print()  # Add an empty line for better readability
             release_list.append(temp_list)
+            counter += 1
     else:
         print("Failed to fetch the releases. Status code:", response.status_code)
         print(f"403 error means you've DONE OVER 60 API CALLS to githubs API per 1 hour. Now you have to wait! or do it manually")

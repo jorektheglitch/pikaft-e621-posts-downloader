@@ -1629,14 +1629,15 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
             help.verbose_print(f"DOWNLOADING asset:\t{asset_url}")
             for line in help.execute(command_str.split(" ")):
                 help.verbose_print(line)
-
-            if ".zip" in asset_url:
-                # finally unzip the file
-                command_str = "unzip "
-                command_str = f"{command_str}{(asset_url.split('/'))[-1]}"
-                help.verbose_print(f"unzipping zipping asset:\t{asset_url}")
-                for line in help.execute(command_str.split(" ")):
-                    help.verbose_print(line)
+            asset_url = (asset_url.split('/'))[-1]
+            if not ".zip" in asset_url:
+                asset_url = f"{asset_url}.zip"
+            # finally unzip the file
+            command_str = "unzip "
+            command_str = f"{command_str}{asset_url}"
+            help.verbose_print(f"unzipping zipping asset:\t{asset_url}")
+            for line in help.execute(command_str.split(" ")):
+                help.verbose_print(line)
     else:
         for repo_name in repo_download_checkbox_group:
             command_str = "git clone --progress "
@@ -1656,14 +1657,14 @@ def download_repos(repo_download_releases_only, repo_download_checkbox_group, re
                     help.verbose_print(line)
                 # also install the latest pre-trained model
                 command_str = "wget -q --show-progress "
-                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip"
+                url_path = "https://github.com/KichangKim/DeepDanbooru/releases/download/v3-20211112-sgd-e28/deepdanbooru-v3-20211112-sgd-e28.zip" # newest model
                 command_str = f"{command_str}{url_path}"
                 help.verbose_print(f"DOWNLOADING pre-trained model:\t{repo_name}")
                 for line in help.execute(command_str.split(" ")):
                     help.verbose_print(line)
                 # finally unzip the file
                 command_str = "unzip "
-                url_path = "deepdanbooru-v3-20211112-sgd-e28.zip"
+                url_path = (url_path.split('/'))[-1]
                 command_str = f"{command_str}{url_path}"
                 help.verbose_print(f"unzipping zip of model:\t{repo_name}")
                 for line in help.execute(command_str.split(" ")):
