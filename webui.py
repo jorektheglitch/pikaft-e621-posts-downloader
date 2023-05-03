@@ -2300,6 +2300,6 @@ if __name__ == "__main__":
         password=args.password,
         inbrowser=args.inbrowser,
         server_port=args.server_port,
-        show=args.share,
+        share=args.share,
     )
 
