@@ -7,6 +7,8 @@ import copy
 import e621_batch_downloader
 import helper_functions as help
 
+import argparse
+
 '''
 ##################################################################################################################################
 #############################################     PRIMARY VARIABLE DECLARATIONS     ##############################################
@@ -2247,8 +2249,57 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
     parse_button_required.click(fn=parse_file_required, inputs=[file_all_tags_list_required], outputs=[required_tags_group_var])
     parse_button_blacklist.click(fn=parse_file_blacklist, inputs=[file_all_tags_list_blacklist], outputs=[blacklist_group_var])
 
+def UI(**kwargs):
+    # Show the interface
+    launch_kwargs = {}
+    if not kwargs.get('username', None) == '':
+        launch_kwargs['auth'] = (
+            kwargs.get('username', None),
+            kwargs.get('password', None),
+        )
+    if kwargs.get('server_port', 0) > 0:
+        launch_kwargs['server_port'] = kwargs.get('server_port', 0)
+    if kwargs.get('inbrowser', False):
+        launch_kwargs['inbrowser'] = kwargs.get('inbrowser', False)
+    if kwargs.get('share', True):
+        launch_kwargs['share'] = True
+
+    print(launch_kwargs)
+    demo.queue().launch(**launch_kwargs)
+
 if __name__ == "__main__":
     # init client & server connection
     HOST = "127.0.0.1"
 
-    demo.queue().launch()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--username', type=str, default='', help='Username for authentication'
+    )
+    parser.add_argument(
+        '--password', type=str, default='', help='Password for authentication'
+    )
+    parser.add_argument(
+        '--server_port',
+        type=int,
+        default=0,
+        help='Port to run the server listener on',
+    )
+    parser.add_argument(
+        '--inbrowser', action='store_true', help='Open in browser'
+    )
+    parser.add_argument(
+        '--share',
+        action='store_true',
+        help='Share live gradio link',
+    )
+
+    args = parser.parse_args()
+
+    UI(
+        username=args.username,
+        password=args.password,
+        inbrowser=args.inbrowser,
+        server_port=args.server_port,
+        show=args.share,
+    )
+
