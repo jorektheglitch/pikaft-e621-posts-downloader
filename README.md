@@ -52,6 +52,12 @@ This downloader uses aria2 for fast downloading.
 ```
 sudo apt-get install aria2
 ```
+#### other system installs
+- unzip for the (optionally) downloaded zip files
+```
+supo apt-get install unzip
+```
+
 For Windows, install the aria2 build https://github.com/aria2/aria2/releases/ Add aria2 in your environment variable paths
 
 ## How to use
