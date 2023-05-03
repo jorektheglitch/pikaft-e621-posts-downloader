@@ -73,7 +73,7 @@ python webui.py --server_port 7860 --inbrowser --share --username NAME --passwor
 
 # Important:
 
-`wget` doesn't work on pixeldrain links, so to download the `Z3D-E621-Convnext model` auto-tagging model made by `Zack3D`, it will need to be downloaded manually from here: https://pixeldrain.com/u/iNMyyi2w
+`wget` doesn't work on pixeldrain links, so to download the `Z3D-E621-Convnext` auto-tagging model made by `Zack3D`, it will need to be downloaded manually from here: https://pixeldrain.com/u/iNMyyi2w
 
 ## DB export error workaround:
 If you get an error saying,
