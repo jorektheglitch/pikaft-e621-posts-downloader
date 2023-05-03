@@ -1272,6 +1272,12 @@ def remove_from_all(file_path):
     # load the csvs if not already loaded and the image dictionaries
     load_images_and_csvs()
 
+    all_keys_temp = list(all_images_dict.keys())
+    search_flag = False
+    if "searched" in all_keys_temp:
+        all_keys_temp.remove("searched")
+        search_flag = True
+
     # update the csvs and global dictionaries
     for tag in all_tags:
         category_key = get_category_name(tag)
@@ -1280,19 +1286,22 @@ def remove_from_all(file_path):
             # edit csv dictionaries
             remove_to_csv_dictionaries(category_key, tag) # remove
         # update all the image text files
-        for img_type in list(all_images_dict.keys()):
+        for img_type in all_keys_temp:
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     while tag in all_images_dict[img_type][every_image]:
                         all_images_dict[img_type][every_image].remove(tag)
+                        if search_flag:
+                            all_images_dict["searched"][img_type][every_image].remove(tag)
 
-                        if not every_image in auto_complete_config[img_type]:#################################TypeError: 'NoneType' object is not subscriptable---- since auto_complete_config was NULL and the file was empty!!!!!!!!!!!!!!!!!!!!!! and not saving anything to it the entire time!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
                         auto_complete_config[img_type][every_image].append(['-', tag])
     # persist changes
     csv_persist_to_disk()
     full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
-    for ext in list(all_images_dict.keys()):
+
+    for ext in all_keys_temp:
         for img_id in list(all_images_dict[ext].keys()):
             full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
             full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
@@ -1321,6 +1330,12 @@ def replace_from_all(file_path):
     # load the csvs if not already loaded and the image dictionaries
     load_images_and_csvs()
 
+    all_keys_temp = list(all_images_dict.keys())
+    search_flag = False
+    if "searched" in all_keys_temp:
+        all_keys_temp.remove("searched")
+        search_flag = True
+
     # update the csvs
     for tag, replacement_tags in all_tags:
         category_key = get_category_name(tag)
@@ -1334,12 +1349,14 @@ def replace_from_all(file_path):
             if category_key:
                 add_to_csv_dictionaries(category_key, replacement_tag) # add
         # update all the image text files
-        for img_type in list(all_images_dict.keys()):
+        for img_type in all_keys_temp:
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     # get index of keyword
                     index = (all_images_dict[img_type][every_image]).index(tag)
                     all_images_dict[img_type][every_image].remove(tag) ############ consider repeats present
+                    if search_flag:
+                        all_images_dict["searched"][img_type][every_image].remove(tag)
 
                     if not every_image in auto_complete_config[img_type]:
                         auto_complete_config[img_type][every_image] = []
@@ -1347,6 +1364,8 @@ def replace_from_all(file_path):
 
                     for i in range(0, len(replacement_tags)):
                         all_images_dict[img_type][every_image].insert((index + i), replacement_tags[i])
+                        if search_flag:
+                            all_images_dict["searched"][img_type][every_image].insert((index + i), replacement_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1354,7 +1373,7 @@ def replace_from_all(file_path):
     # persist changes
     csv_persist_to_disk()
     full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
-    for ext in list(all_images_dict.keys()):
+    for ext in all_keys_temp:
         for img_id in list(all_images_dict[ext].keys()):
             full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
             full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
@@ -1379,6 +1398,12 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
     # load the csvs if not already loaded and the image dictionaries
     load_images_and_csvs()
 
+    all_keys_temp = list(all_images_dict.keys())
+    search_flag = False
+    if "searched" in all_keys_temp:
+        all_keys_temp.remove("searched")
+        search_flag = True
+
     # update the csvs
     if keyword_search_text and not keyword_search_text == "":
         category_key = get_category_name(keyword_search_text)
@@ -1392,7 +1417,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
         if category_key:
             add_to_csv_dictionaries(category_key, prepend_tag) # add
     # update all the image text files
-    for img_type in list(all_images_dict.keys()):
+    for img_type in all_keys_temp:
         for every_image in list(all_images_dict[img_type].keys()):
             if keyword_search_text and not keyword_search_text == "":
                 if keyword_search_text in all_images_dict[img_type][every_image]:
@@ -1402,6 +1427,8 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                         index += 1
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].insert((index + i), prepend_tags[i])
+                        if search_flag:
+                            all_images_dict["searched"][img_type][every_image].insert((index + i), prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1410,6 +1437,8 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                 if prepend_option == "Start":
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].insert(i, prepend_tags[i])
+                        if search_flag:
+                            all_images_dict["searched"][img_type][every_image].insert(i, prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1417,6 +1446,8 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                 else:
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].append(prepend_tags[i])
+                        if search_flag:
+                            all_images_dict["searched"][img_type][every_image].append(prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
                             auto_complete_config[img_type][every_image] = []
@@ -1424,7 +1455,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
     # persist changes
     csv_persist_to_disk()
     full_path_downloads = os.path.join(os.path.join(cwd, settings_json["batch_folder"]), settings_json["downloaded_posts_folder"])
-    for ext in list(all_images_dict.keys()):
+    for ext in all_keys_temp:
         for img_id in list(all_images_dict[ext].keys()):
             full_path_gallery_type = os.path.join(full_path_downloads, settings_json[f"{ext}_folder"])
             full_path = os.path.join(full_path_gallery_type, f"{img_id}.txt")
