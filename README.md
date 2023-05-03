@@ -65,6 +65,8 @@ For Windows, install the aria2 build https://github.com/aria2/aria2/releases/ Ad
 #### Run the Web-User Interface
 ```
 python webui.py
+python webui.py --listen 127.0.0.1 --server_port 7860 --inbrowser --share
+python webui.py --listen 127.0.0.1 --server_port 7860 --inbrowser --share --username NAME --password PASS
 ```
 
 ## Additional Information
