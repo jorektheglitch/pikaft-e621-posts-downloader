@@ -3,11 +3,13 @@ import os
 import multiprocessing as mp
 import glob
 import copy
+import sys
 
 import e621_batch_downloader
 import helper_functions as help
 
 import argparse
+import datetime
 
 '''
 ##################################################################################################################################
@@ -105,6 +107,11 @@ if not auto_complete_config:
 
 global repo_release_urls
 repo_release_urls = {}
+
+
+
+global image_creation_times
+image_creation_times = {}
 '''
 ##################################################################################################################################
 #################################################     COMPONENT/S FUNCTION/S     #################################################
@@ -384,9 +391,31 @@ def end_connection():
     e6_downloader.join()
     del e6_downloader
 
+def initialize_posts_timekeeper():
+    global all_images_dict, image_creation_times
+    start_year_temp = int(settings_json["min_year"])
+    end_year_temp = datetime.date.today().year
+    help.verbose_print(f"start_year_temp:\t{start_year_temp}")
+    help.verbose_print(f"end_year_temp:\t{end_year_temp}")
+    years_to_check_list = list(range(start_year_temp, (end_year_temp + 1), 1))
+    help.verbose_print(f"years_to_check_list:\t{years_to_check_list}")
+
+    if len(list(image_creation_times.keys())) == 0:
+        temp_keys_all_images_dict = list(all_images_dict.keys())
+        if "searched" in temp_keys_all_images_dict:
+            temp_keys_all_images_dict.remove("searched")
+        for ext in temp_keys_all_images_dict:
+            for img_id in list(all_images_dict[ext].keys()):
+                for year in years_to_check_list:
+                    if str(year) in all_images_dict[ext][img_id]:
+                        image_creation_times[img_id] = year
+                        break
+    help.verbose_print(f"image_creation_times:\t{image_creation_times}")
+
 ### Update gellery component
-def update_search_gallery():
-    global all_images_dict
+def update_search_gallery(sort_images, sort_option):
+    global all_images_dict, image_creation_times
+    temp = '\\' if help.is_windows() else '/'
     folder_path = os.path.join(cwd, settings_json["batch_folder"])
     folder_path = os.path.join(folder_path, settings_json["downloaded_posts_folder"])
     images = []
@@ -394,6 +423,14 @@ def update_search_gallery():
         search_path = os.path.join(folder_path, settings_json[f"{ext}_folder"])
         for img_id in list(all_images_dict["searched"][ext].keys()):
             images.append(os.path.join(search_path, f"{img_id}.{ext}"))
+
+    if sort_images and len(sort_option) > 0 and len(list(image_creation_times.keys())) > 0:
+        # parse to img_id -> to get the year
+        if sort_option == "new-to-old":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')), reverse=True)
+        elif sort_option == "old-to-new":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')))
+    # help.verbose_print(f"images:\t{images}")
     return images
 
 ######
@@ -401,8 +438,10 @@ def update_search_gallery():
 ### image_type -> {img_id, tags}
 ### searched -> {img_id, tags}
 ######
-def show_gallery(folder_type_select):
-    global all_images_dict
+def show_gallery(folder_type_select, sort_images, sort_option):
+    help.verbose_print(f"folder_type_select:\t{folder_type_select}")
+
+    global all_images_dict, image_creation_times
     temp = '\\' if help.is_windows() else '/'
     # clear searched dict
     if "searched" in all_images_dict:
@@ -444,8 +483,22 @@ def show_gallery(folder_type_select):
             all_images_dict = help.merge_dict(os.path.join(full_path_downloads, settings_json[f"png_folder"]),
                                          os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
                                          os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
+
+        # populate the timekeeping dictionary
+        initialize_posts_timekeeper()
+
         # verbose_print(f"all_images_dict:\t\t{all_images_dict}")
         # help.verbose_print(f"list(all_images_dict[ext]):\t\t{list(all_images_dict[folder_type_select])}")
+
+    if sort_images and len(sort_option) > 0 and len(list(image_creation_times.keys())) > 0:
+        # parse to img_id -> to get the year
+        if sort_option == "new-to-old":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')),
+                            reverse=True)
+        elif sort_option == "old-to-new":
+            images = sorted(images, key=lambda x: image_creation_times.get(((x.split(temp)[-1]).split(".")[0]), float('-inf')))
+
+    # help.verbose_print(f"images:\t{images}")
     return gr.update(value=images, visible=True)
 
 def clear_categories():
@@ -476,13 +529,14 @@ def get_searched_image_total():
         total_img_count += len(list(all_images_dict["searched"][key].keys()))
     return total_img_count
 
-def show_searched_gallery(folder_type_select):
+def show_searched_gallery(folder_type_select, sort_images, sort_option):
     global all_images_dict
     # type select
     if "searched" in all_images_dict and len(list(all_images_dict["searched"].keys())) > 0 and get_searched_image_total() > 0:
-        images = update_search_gallery()
+        images = update_search_gallery(sort_images, sort_option)
     else:
-        return show_gallery(folder_type_select)
+        help.verbose_print(f"in SHOW searched gallery")
+        return show_gallery(folder_type_select, sort_images, sort_option)
     return gr.update(value=images, visible=True)
 
 def reset_gallery():
@@ -763,11 +817,11 @@ def filter_images_by_tags(input_tags, allowed_image_types):
     all_images_dict["searched"] = copy.deepcopy(filtered_images)
     help.verbose_print(f"===============================")
 
-def search_tags(tag_search_textbox, global_search_opts):
+def search_tags(tag_search_textbox, global_search_opts, sort_images, sort_option):
     # update SEARCHED in global dictionary
     filter_images_by_tags(tag_search_textbox, global_search_opts)
     # return updated gallery
-    images = update_search_gallery()
+    images = update_search_gallery(sort_images, sort_option)
     return gr.update(value=images, visible=True)
 
 def add_to_csv_dictionaries(string_category, tag, count=1):
@@ -1092,7 +1146,7 @@ def get_category_name(tag):
         return None
 
 ### if "searched" is selected in apply_to_all_type_select_checkboxgroup, then all SEARCHED images will be deleted!
-def remove_images(apply_to_all_type_select_checkboxgroup, image_id):
+def remove_images(apply_to_all_type_select_checkboxgroup, image_id, sort_images, sort_option):
     global all_images_dict
     global selected_image_dict
     image_id = str(image_id)
@@ -1135,7 +1189,7 @@ def remove_images(apply_to_all_type_select_checkboxgroup, image_id):
     category_comp6 = gr.update(choices=[], value=[])
 
     # gallery update
-    images = update_search_gallery()
+    images = update_search_gallery(sort_images, sort_option)
     gallery = gr.update(value=images, visible=True)
     # textbox update
     id_box = gr.update(value="")
@@ -1250,6 +1304,9 @@ def load_images_and_csvs():
                                               os.path.join(full_path_downloads, settings_json[f"jpg_folder"]),
                                               os.path.join(full_path_downloads, settings_json[f"gif_folder"]))
 
+        # populate the timekeeping dictionary
+        initialize_posts_timekeeper()
+
         tag_count_dir = os.path.join(os.path.join(cwd, settings_json["batch_folder"]),
                                      settings_json["tag_count_list_folder"])
         is_csv_loaded = True
@@ -1279,6 +1336,7 @@ def remove_from_all(file_path):
         search_flag = True
 
     # update the csvs and global dictionaries
+    searched_keys_temp = list(all_images_dict["searched"].keys())
     for tag in all_tags:
         category_key = get_category_name(tag)
         if category_key:
@@ -1287,11 +1345,12 @@ def remove_from_all(file_path):
             remove_to_csv_dictionaries(category_key, tag) # remove
         # update all the image text files
         for img_type in all_keys_temp:
+            searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     while tag in all_images_dict[img_type][every_image]:
                         all_images_dict[img_type][every_image].remove(tag)
-                        if search_flag:
+                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                             all_images_dict["searched"][img_type][every_image].remove(tag)
 
                         if not every_image in auto_complete_config[img_type]:
@@ -1337,6 +1396,7 @@ def replace_from_all(file_path):
         search_flag = True
 
     # update the csvs
+    searched_keys_temp = list(all_images_dict["searched"].keys())
     for tag, replacement_tags in all_tags:
         category_key = get_category_name(tag)
         if category_key:
@@ -1350,12 +1410,13 @@ def replace_from_all(file_path):
                 add_to_csv_dictionaries(category_key, replacement_tag) # add
         # update all the image text files
         for img_type in all_keys_temp:
+            searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
             for every_image in list(all_images_dict[img_type].keys()):
                 if tag in all_images_dict[img_type][every_image]:
                     # get index of keyword
                     index = (all_images_dict[img_type][every_image]).index(tag)
                     all_images_dict[img_type][every_image].remove(tag) ############ consider repeats present
-                    if search_flag:
+                    if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                         all_images_dict["searched"][img_type][every_image].remove(tag)
 
                     if not every_image in auto_complete_config[img_type]:
@@ -1364,7 +1425,7 @@ def replace_from_all(file_path):
 
                     for i in range(0, len(replacement_tags)):
                         all_images_dict[img_type][every_image].insert((index + i), replacement_tags[i])
-                        if search_flag:
+                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                             all_images_dict["searched"][img_type][every_image].insert((index + i), replacement_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
@@ -1417,7 +1478,9 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
         if category_key:
             add_to_csv_dictionaries(category_key, prepend_tag) # add
     # update all the image text files
+    searched_keys_temp = list(all_images_dict["searched"].keys())
     for img_type in all_keys_temp:
+        searched_img_id_keys_temp = list(all_images_dict["searched"][img_type].keys())
         for every_image in list(all_images_dict[img_type].keys()):
             if keyword_search_text and not keyword_search_text == "":
                 if keyword_search_text in all_images_dict[img_type][every_image]:
@@ -1427,7 +1490,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                         index += 1
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].insert((index + i), prepend_tags[i])
-                        if search_flag:
+                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                             all_images_dict["searched"][img_type][every_image].insert((index + i), prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
@@ -1437,7 +1500,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                 if prepend_option == "Start":
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].insert(i, prepend_tags[i])
-                        if search_flag:
+                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                             all_images_dict["searched"][img_type][every_image].insert(i, prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
@@ -1446,7 +1509,7 @@ def prepend_with_keyword(keyword_search_text, prepend_text, prepend_option):
                 else:
                     for i in range(0, len(prepend_tags)):
                         all_images_dict[img_type][every_image].append(prepend_tags[i])
-                        if search_flag:
+                        if search_flag and img_type in searched_keys_temp and every_image in searched_img_id_keys_temp:
                             all_images_dict["searched"][img_type][every_image].append(prepend_tags[i])
 
                         if not every_image in auto_complete_config[img_type]:
@@ -2040,6 +2103,9 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                 with gr.Row():
                     apply_to_all_type_select_checkboxgroup = gr.CheckboxGroup(choices=["png", "jpg", "gif", "searched"], label=f'Apply\'s to ALL of {["png", "jpg", "gif", "searched"]} type', value=[])
                 with gr.Row():
+                    apply_datetime_sort_ckbx = gr.Checkbox(label="Sort Image/s by date", value=False)
+                    apply_datetime_choice_menu = gr.Dropdown(label="Sort Image/s by date", choices=["new-to-old", "old-to-new"], value="")
+                with gr.Row():
                     tag_remove_button = gr.Button(value="Remove Selected Tag/s", variant='primary')
                     tag_save_button = gr.Button(value="Save Tag Changes", variant='primary')
                 with gr.Row():
@@ -2128,12 +2194,12 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
     replace_now_button.click(fn=replace_from_all, inputs=[replace_tags_list], outputs=[])
     prepend_now_button.click(fn=prepend_with_keyword, inputs=[keyword_search_text, prepend_text, prepend_option], outputs=[])
 
-    image_remove_button.click(fn=remove_images, inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox],
+    image_remove_button.click(fn=remove_images, inputs=[apply_to_all_type_select_checkboxgroup, img_id_textbox, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
                               outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,
                                        img_species_tag_checkbox_group,img_general_tag_checkbox_group,
                                        img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,gallery_comp,
                                        img_id_textbox]).then(fn=reset_gallery, inputs=[],
-                              outputs=[gallery_comp]).then(fn=show_searched_gallery, inputs=[download_folder_type],
+                              outputs=[gallery_comp]).then(fn=show_searched_gallery, inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu],
                               outputs=[gallery_comp])
 
     image_save_ids_button.click(fn=save_image_changes, inputs=[], outputs=[])
@@ -2162,15 +2228,15 @@ with gr.Blocks(css=f"{green_button_css} {red_button_css}") as demo:
                                   outputs=[img_rating_tag_checkbox_group])
 
     tag_save_button.click(fn=save_tag_changes,inputs=[], outputs=[]).then(fn=reset_gallery, inputs=[], outputs=[gallery_comp]).then(fn=show_searched_gallery,
-                            inputs=[download_folder_type], outputs=[gallery_comp]).then(fn=clear_categories, inputs=[],
+                            inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=clear_categories, inputs=[],
                             outputs=[img_artist_tag_checkbox_group,img_character_tag_checkbox_group,img_species_tag_checkbox_group,
                                      img_general_tag_checkbox_group,img_meta_tag_checkbox_group,img_rating_tag_checkbox_group,img_id_textbox])
 
-    tag_search_textbox.submit(fn=search_tags, inputs=[tag_search_textbox, apply_to_all_type_select_checkboxgroup], outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
+    tag_search_textbox.submit(fn=search_tags, inputs=[tag_search_textbox, apply_to_all_type_select_checkboxgroup, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
                         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
-    download_folder_type.change(fn=show_gallery, inputs=[download_folder_type], outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
+    download_folder_type.change(fn=show_gallery, inputs=[download_folder_type, apply_datetime_sort_ckbx, apply_datetime_choice_menu], outputs=[gallery_comp]).then(fn=reset_selected_img, inputs=[img_id_textbox],
                         outputs=[img_id_textbox, img_artist_tag_checkbox_group, img_character_tag_checkbox_group, img_species_tag_checkbox_group, img_general_tag_checkbox_group,
                                 img_meta_tag_checkbox_group, img_rating_tag_checkbox_group])
 
@@ -2333,4 +2399,3 @@ if __name__ == "__main__":
         server_port=args.server_port,
         share=args.share,
     )
-
