@@ -18,6 +18,161 @@ from tqdm.auto import tqdm
 
 
 class E6_Downloader:
+
+    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
+        self.basefolder = basefolder
+        self.settings = settings
+        self.numcpu = numcpu
+        self.phaseperbatch = phaseperbatch
+        self.postscsv = postscsv
+        self.tagscsv = tagscsv
+        self.postsparquet = postsparquet
+        self.tagsparquet = tagsparquet
+        self.keepdb = keepdb
+        self.aria2cpath = aria2cpath
+        self.cachepostsdb = cachepostsdb
+
+        self.backend_conn = backend_conn
+
+        self.failed_images = None
+        self.counter = None
+        self.counter_lock = None
+        self.processed_tag_files = None
+        self.aria2c_path = None
+        self.cached_e621_posts = None
+
+        base_folder = os.path.dirname(os.path.abspath(__file__))
+        if self.basefolder != '':
+            base_folder = self.basefolder
+            base_folder = self.removeslash(base_folder)
+            os.makedirs(base_folder, exist_ok=True)
+
+        with open(self.settings, 'r') as json_file:
+            prms = json.load(json_file)
+
+        if self.aria2cpath != '':
+            if not os.path.isfile(self.aria2cpath):
+                raise RuntimeError(
+                    f'aria2c was not found at {self.aria2cpath}. Install https://github.com/aria2/aria2/releases/')
+            self.aria2c_path = self.aria2cpath
+        else:
+            if shutil.which('aria2c') is None:
+                raise RuntimeError('aria2c is not installed. Install https://github.com/aria2/aria2/releases/')
+            self.aria2c_path = "aria2c"
+
+        if self.postscsv != '':
+            if not self.postscsv.endswith('.csv'):
+                raise ValueError('Invalid postscsv file type.')
+            if not os.path.isfile(self.postscsv):
+                raise ValueError(self.postscsv, 'not found.')
+        if self.tagscsv != '':
+            if not self.tagscsv.endswith('.csv'):
+                raise ValueError('Invalid tagscsv file type.')
+            if not os.path.isfile(self.tagscsv):
+                raise ValueError(self.tagscsv, 'not found.')
+        if self.postsparquet != '':
+            if not self.postsparquet.endswith('.parquet'):
+                raise ValueError('Invalid postsparquet file type.')
+            if not os.path.isfile(self.postsparquet):
+                raise ValueError(self.postsparquet, 'not found.')
+        if self.tagsparquet != '':
+            if not self.tagsparquet.endswith('.parquet'):
+                raise ValueError('Invalid tagsparquet file type.')
+            if not os.path.isfile(self.tagsparquet):
+                raise ValueError(self.tagsparquet, 'not found.')
+
+        max_cpu = multiprocessing.cpu_count()
+        num_cpu = max_cpu if (self.numcpu > max_cpu) or (self.numcpu < 1) else self.numcpu
+
+        print('## Checking number of batches validity')
+        batch_count = self.check_param_batch_count(prms)
+
+        self.normalize_params(prms, batch_count)
+
+        print('## Checking settings validity')
+        self.prep_params(prms, batch_count, base_folder)
+
+        print('## Checking required files')
+        e621_posts_list_filename, tag_to_cat, e621_tags_set = self.get_db(base_folder, self.postscsv, self.tagscsv,
+                                                                     self.postsparquet, self.tagsparquet, self.keepdb)
+
+        self.cached_e621_posts = None
+        if self.cachepostsdb:
+            self.cached_e621_posts = pl.read_parquet(e621_posts_list_filename)
+
+        print('## Checking tag search query')
+        self.check_tag_query(prms, e621_tags_set)
+        del e621_tags_set
+
+        self.processed_tag_files = set()
+
+        manager = multiprocessing.Manager()
+        self.failed_images = manager.list()
+        self.counter = manager.Value(c_int, 0)
+        self.counter_lock = manager.Lock()
+
+        session_start_time = time.time()
+        if self.phaseperbatch:
+            for batch_num in range(batch_count):
+                print(f"#### Batch {batch_num} ####")
+                posts_save_path = self.collect_posts(prms, batch_num, e621_posts_list_filename)
+                if posts_save_path is not None:
+                    start_time = time.time()
+                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder)
+                    elapsed = time.time() - start_time
+                    print(
+                        f'## Batch {batch_num} download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+                    if not prms["skip_resize"][batch_num] and (image_list_df.shape[0] > 0):
+                        start_time = time.time()
+                        self.resize_imgs(prms, batch_num, num_cpu, image_list_df["directory"].to_list(),
+                                    image_list_df["filename"].to_list(), image_list_df["tagfilebasename"].to_list())
+                        elapsed = time.time() - start_time
+                        print(
+                            f'## Batch {batch_num} resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+            self.create_searched_list(prms)
+            self.create_tag_count(prms)
+        else:
+            posts_save_paths = [self.collect_posts(prms, batch_num, e621_posts_list_filename) for batch_num in
+                                range(batch_count)]
+            self.create_searched_list(prms)
+            posts_save_paths = [p for p in posts_save_paths if p]
+            if posts_save_paths:
+                start_time = time.time()
+                image_list_df = self.download_posts(prms, list(range(batch_count)), posts_save_paths, tag_to_cat, base_folder,
+                                               batch_mode=True)
+                elapsed = time.time() - start_time
+                print(
+                    f'## Batch download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+                self.create_tag_count(prms)
+                if image_list_df.shape[0] > 0:
+                    start_time = time.time()
+                    self.resize_imgs_batch(num_cpu,
+                                      image_list_df["directory"].to_list(),
+                                      image_list_df["filename"].to_list(),
+                                      image_list_df["resized_img_folder"].to_list(),
+                                      image_list_df["min_short_side"].to_list(),
+                                      image_list_df["img_ext"].to_list(),
+                                      image_list_df["delete_original"].to_list(),
+                                      image_list_df["tagfilebasename"].to_list(),
+                                      image_list_df["method_tag_files"].to_list())
+                    elapsed = time.time() - start_time
+                    print(
+                        f'## Batch resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+
+        if self.failed_images:
+            print(f'## Failed to resize {len(self.failed_images)} images')
+            with open(f'{base_folder}/self.failed_images.txt', 'w') as f:
+                f.write('\n'.join(self.failed_images))
+
+        print('## Done!')
+        elapsed = time.time() - session_start_time
+        print(f'## Total session elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
+        print('#################################################################')
+
+        self.close_PIPE()
+
+        del self.cached_e621_posts
+
     def check_param_batch_count(self, prms):
         batch_count = None
         for param_name, parameter in prms.items():
@@ -1160,157 +1315,3 @@ class E6_Downloader:
     def close_PIPE(self):
         if self.backend_conn:
             self.backend_conn.close()
-
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
-        self.basefolder = basefolder
-        self.settings = settings
-        self.numcpu = numcpu
-        self.phaseperbatch = phaseperbatch
-        self.postscsv = postscsv
-        self.tagscsv = tagscsv
-        self.postsparquet = postsparquet
-        self.tagsparquet = tagsparquet
-        self.keepdb = keepdb
-        self.aria2cpath = aria2cpath
-        self.cachepostsdb = cachepostsdb
-
-        self.backend_conn = backend_conn
-
-        self.failed_images = None
-        self.counter = None
-        self.counter_lock = None
-        self.processed_tag_files = None
-        self.aria2c_path = None
-        self.cached_e621_posts = None
-
-        base_folder = os.path.dirname(os.path.abspath(__file__))
-        if self.basefolder != '':
-            base_folder = self.basefolder
-            base_folder = self.removeslash(base_folder)
-            os.makedirs(base_folder, exist_ok=True)
-
-        with open(self.settings, 'r') as json_file:
-            prms = json.load(json_file)
-
-        if self.aria2cpath != '':
-            if not os.path.isfile(self.aria2cpath):
-                raise RuntimeError(
-                    f'aria2c was not found at {self.aria2cpath}. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = self.aria2cpath
-        else:
-            if shutil.which('aria2c') is None:
-                raise RuntimeError('aria2c is not installed. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = "aria2c"
-
-        if self.postscsv != '':
-            if not self.postscsv.endswith('.csv'):
-                raise ValueError('Invalid postscsv file type.')
-            if not os.path.isfile(self.postscsv):
-                raise ValueError(self.postscsv, 'not found.')
-        if self.tagscsv != '':
-            if not self.tagscsv.endswith('.csv'):
-                raise ValueError('Invalid tagscsv file type.')
-            if not os.path.isfile(self.tagscsv):
-                raise ValueError(self.tagscsv, 'not found.')
-        if self.postsparquet != '':
-            if not self.postsparquet.endswith('.parquet'):
-                raise ValueError('Invalid postsparquet file type.')
-            if not os.path.isfile(self.postsparquet):
-                raise ValueError(self.postsparquet, 'not found.')
-        if self.tagsparquet != '':
-            if not self.tagsparquet.endswith('.parquet'):
-                raise ValueError('Invalid tagsparquet file type.')
-            if not os.path.isfile(self.tagsparquet):
-                raise ValueError(self.tagsparquet, 'not found.')
-
-        max_cpu = multiprocessing.cpu_count()
-        num_cpu = max_cpu if (self.numcpu > max_cpu) or (self.numcpu < 1) else self.numcpu
-
-        print('## Checking number of batches validity')
-        batch_count = self.check_param_batch_count(prms)
-
-        self.normalize_params(prms, batch_count)
-
-        print('## Checking settings validity')
-        self.prep_params(prms, batch_count, base_folder)
-
-        print('## Checking required files')
-        e621_posts_list_filename, tag_to_cat, e621_tags_set = self.get_db(base_folder, self.postscsv, self.tagscsv,
-                                                                     self.postsparquet, self.tagsparquet, self.keepdb)
-
-        self.cached_e621_posts = None
-        if self.cachepostsdb:
-            self.cached_e621_posts = pl.read_parquet(e621_posts_list_filename)
-
-        print('## Checking tag search query')
-        self.check_tag_query(prms, e621_tags_set)
-        del e621_tags_set
-
-        self.processed_tag_files = set()
-
-        manager = multiprocessing.Manager()
-        self.failed_images = manager.list()
-        self.counter = manager.Value(c_int, 0)
-        self.counter_lock = manager.Lock()
-
-        session_start_time = time.time()
-        if self.phaseperbatch:
-            for batch_num in range(batch_count):
-                print(f"#### Batch {batch_num} ####")
-                posts_save_path = self.collect_posts(prms, batch_num, e621_posts_list_filename)
-                if posts_save_path is not None:
-                    start_time = time.time()
-                    image_list_df = self.download_posts(prms, [batch_num], [posts_save_path], tag_to_cat, base_folder)
-                    elapsed = time.time() - start_time
-                    print(
-                        f'## Batch {batch_num} download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
-                    if not prms["skip_resize"][batch_num] and (image_list_df.shape[0] > 0):
-                        start_time = time.time()
-                        self.resize_imgs(prms, batch_num, num_cpu, image_list_df["directory"].to_list(),
-                                    image_list_df["filename"].to_list(), image_list_df["tagfilebasename"].to_list())
-                        elapsed = time.time() - start_time
-                        print(
-                            f'## Batch {batch_num} resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
-            self.create_searched_list(prms)
-            self.create_tag_count(prms)
-        else:
-            posts_save_paths = [self.collect_posts(prms, batch_num, e621_posts_list_filename) for batch_num in
-                                range(batch_count)]
-            self.create_searched_list(prms)
-            posts_save_paths = [p for p in posts_save_paths if p]
-            if posts_save_paths:
-                start_time = time.time()
-                image_list_df = self.download_posts(prms, list(range(batch_count)), posts_save_paths, tag_to_cat, base_folder,
-                                               batch_mode=True)
-                elapsed = time.time() - start_time
-                print(
-                    f'## Batch download elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
-                self.create_tag_count(prms)
-                if image_list_df.shape[0] > 0:
-                    start_time = time.time()
-                    self.resize_imgs_batch(num_cpu,
-                                      image_list_df["directory"].to_list(),
-                                      image_list_df["filename"].to_list(),
-                                      image_list_df["resized_img_folder"].to_list(),
-                                      image_list_df["min_short_side"].to_list(),
-                                      image_list_df["img_ext"].to_list(),
-                                      image_list_df["delete_original"].to_list(),
-                                      image_list_df["tagfilebasename"].to_list(),
-                                      image_list_df["method_tag_files"].to_list())
-                    elapsed = time.time() - start_time
-                    print(
-                        f'## Batch resize elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
-
-        if self.failed_images:
-            print(f'## Failed to resize {len(self.failed_images)} images')
-            with open(f'{base_folder}/self.failed_images.txt', 'w') as f:
-                f.write('\n'.join(self.failed_images))
-
-        print('## Done!')
-        elapsed = time.time() - session_start_time
-        print(f'## Total session elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
-        print('#################################################################')
-
-        self.close_PIPE()
-
-        del self.cached_e621_posts
