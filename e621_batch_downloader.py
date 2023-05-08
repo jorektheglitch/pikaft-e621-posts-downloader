@@ -17,7 +17,7 @@ import requests
 from tqdm.auto import tqdm
 
 
-class E6_Downloader:
+class E6Downloader:
 
     def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
         self.basefolder = basefolder
@@ -169,7 +169,7 @@ class E6_Downloader:
         print(f'## Total session elapsed time: {elapsed // 60:02.0f}:{elapsed % 60:02.0f}.{f"{elapsed % 1:.2f}"[2:]}')
         print('#################################################################')
 
-        self.close_PIPE()
+        self.close_pipe()
 
         del self.cached_e621_posts
 
@@ -1312,6 +1312,6 @@ class E6_Downloader:
                     shutil.copyfile(img_fol + tag_file, res_fol + tag_file)
         print('')
 
-    def close_PIPE(self):
+    def close_pipe(self):
         if self.backend_conn:
             self.backend_conn.close()

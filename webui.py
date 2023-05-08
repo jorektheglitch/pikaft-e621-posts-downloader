@@ -333,7 +333,7 @@ def run_script(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,kee
     global frontend_conn, backend_conn
     frontend_conn, backend_conn = mp.Pipe()
     global e6_downloader
-    e6_downloader = mp.Process(target=e621_batch_downloader.E6_Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
+    e6_downloader = mp.Process(target=e621_batch_downloader.E6Downloader, args=(basefolder, settings_path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn),)
     e6_downloader.start()
 
 def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=False,keepdb=False,cachepostsdb=False,postscsv='',tagscsv='',postsparquet='',tagsparquet='',aria2cpath='',run_button_batch=None,images_full_change_dict_textbox=None,progress=gr.Progress()):
@@ -346,7 +346,7 @@ def run_script_batch(basefolder='',settings_path=cwd,numcpu=-1,phaseperbatch=Fal
         if not ".json" in path:
             path += ".json"
 
-        e6_downloader = e621_batch_downloader.E6_Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
+        e6_downloader = e621_batch_downloader.E6Downloader(basefolder, path, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, None)
         #
         # settings_json = help.load_session_config(path)
         # # apply post-processing
