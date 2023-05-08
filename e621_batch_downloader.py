@@ -1,19 +1,21 @@
 # https://github.com/pikaflufftuft/pikaft-e621-posts-downloader
 
-import os
+import gzip
 import json
+import multiprocessing
+import os
+import re
+import shutil
+import subprocess
+import time
+from ctypes import c_int
+from itertools import repeat
+
+import cv2
+import polars as pl
 import requests
 from tqdm.auto import tqdm
-import shutil
-import gzip
-import polars as pl
-import subprocess
-import cv2
-import multiprocessing
-from itertools import repeat
-from ctypes import c_int
-import re
-import time
+
 
 class E6_Downloader:
     def check_param_batch_count(self, prms):
