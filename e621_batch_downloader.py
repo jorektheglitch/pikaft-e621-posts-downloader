@@ -10,6 +10,9 @@ import subprocess
 import time
 from ctypes import c_int
 from itertools import repeat
+from multiprocessing.managers import ValueProxy
+from threading import Lock
+from typing import Any, Container
 
 import cv2
 import polars as pl
@@ -19,9 +22,13 @@ from tqdm.auto import tqdm
 
 class E6Downloader:
 
-    def __init__(self, basefolder, settings, numcpu, phaseperbatch, postscsv, tagscsv, postsparquet, tagsparquet, keepdb, aria2cpath, cachepostsdb, backend_conn):
+    def __init__(self,
+                 basefolder: str, settings_path: str, numcpu: int, phaseperbatch: bool,
+                 postscsv: str, tagscsv: str, postsparquet: str, tagsparquet: str, keepdb: bool,
+                 aria2cpath: str, cachepostsdb: bool, backend_conn: Any
+                 ) -> None:
         self.basefolder = basefolder
-        self.settings = settings
+        self.settings_path = settings_path
         self.numcpu = numcpu
         self.phaseperbatch = phaseperbatch
         self.postscsv = postscsv
@@ -29,16 +36,13 @@ class E6Downloader:
         self.postsparquet = postsparquet
         self.tagsparquet = tagsparquet
         self.keepdb = keepdb
-        self.aria2cpath = aria2cpath
         self.cachepostsdb = cachepostsdb
 
         self.backend_conn = backend_conn
 
         self.failed_images = None
-        self.counter = None
-        self.counter_lock = None
-        self.processed_tag_files = None
-        self.aria2c_path = None
+        self.processed_tag_files: set = set()
+        self.aria2c_path: str = ''
         self.cached_e621_posts = None
 
         base_folder = os.path.dirname(os.path.abspath(__file__))
@@ -47,35 +51,35 @@ class E6Downloader:
             base_folder = self.removeslash(base_folder)
             os.makedirs(base_folder, exist_ok=True)
 
-        with open(self.settings, 'r') as json_file:
-            prms = json.load(json_file)
+        with open(self.settings_path, 'r') as json_file:
+            prms: dict[str, Any] = json.load(json_file)
 
-        if self.aria2cpath != '':
-            if not os.path.isfile(self.aria2cpath):
+        if aria2cpath:
+            if not os.path.isfile(aria2cpath):
                 raise RuntimeError(
-                    f'aria2c was not found at {self.aria2cpath}. Install https://github.com/aria2/aria2/releases/')
-            self.aria2c_path = self.aria2cpath
+                    f'aria2c was not found at {aria2cpath}. Install https://github.com/aria2/aria2/releases/')
+            self.aria2c_path = aria2cpath
         else:
             if shutil.which('aria2c') is None:
                 raise RuntimeError('aria2c is not installed. Install https://github.com/aria2/aria2/releases/')
             self.aria2c_path = "aria2c"
 
-        if self.postscsv != '':
+        if self.postscsv:
             if not self.postscsv.endswith('.csv'):
                 raise ValueError('Invalid postscsv file type.')
             if not os.path.isfile(self.postscsv):
                 raise ValueError(self.postscsv, 'not found.')
-        if self.tagscsv != '':
+        if self.tagscsv:
             if not self.tagscsv.endswith('.csv'):
                 raise ValueError('Invalid tagscsv file type.')
             if not os.path.isfile(self.tagscsv):
                 raise ValueError(self.tagscsv, 'not found.')
-        if self.postsparquet != '':
+        if self.postsparquet:
             if not self.postsparquet.endswith('.parquet'):
                 raise ValueError('Invalid postsparquet file type.')
             if not os.path.isfile(self.postsparquet):
                 raise ValueError(self.postsparquet, 'not found.')
-        if self.tagsparquet != '':
+        if self.tagsparquet:
             if not self.tagsparquet.endswith('.parquet'):
                 raise ValueError('Invalid tagsparquet file type.')
             if not os.path.isfile(self.tagsparquet):
@@ -104,8 +108,6 @@ class E6Downloader:
         self.check_tag_query(prms, e621_tags_set)
         del e621_tags_set
 
-        self.processed_tag_files = set()
-
         manager = multiprocessing.Manager()
         self.failed_images = manager.list()
         self.counter = manager.Value(c_int, 0)
@@ -132,10 +134,10 @@ class E6Downloader:
             self.create_searched_list(prms)
             self.create_tag_count(prms)
         else:
-            posts_save_paths = [self.collect_posts(prms, batch_num, e621_posts_list_filename) for batch_num in
+            posts_save_paths_raw = [self.collect_posts(prms, batch_num, e621_posts_list_filename) for batch_num in
                                 range(batch_count)]
             self.create_searched_list(prms)
-            posts_save_paths = [p for p in posts_save_paths if p]
+            posts_save_paths = [p for p in posts_save_paths_raw if p]
             if posts_save_paths:
                 start_time = time.time()
                 image_list_df = self.download_posts(prms, list(range(batch_count)), posts_save_paths, tag_to_cat, base_folder,
@@ -173,7 +175,7 @@ class E6Downloader:
 
         del self.cached_e621_posts
 
-    def check_param_batch_count(self, prms):
+    def check_param_batch_count(self, prms: dict[str, Any]) -> int:
         batch_count = None
         for param_name, parameter in prms.items():
             if isinstance(parameter, list):
@@ -192,14 +194,12 @@ class E6Downloader:
 
         return batch_count
 
-
-    def normalize_params(self, prms, batch_count):
+    def normalize_params(self, prms: dict[str, Any], batch_count: int) -> None:
         for param_name, parameter in prms.items():
             if not isinstance(parameter, list):
                 prms[param_name] = [parameter] * batch_count
 
-
-    def check_valid_param(self, lst, name, options, typ=None):
+    def check_valid_param(self, lst: list, name: str, options: Container[Any] | None, typ: type | tuple[type, ...] | None = None) -> None:
         for item in lst:
             if options is not None:
                 if item not in options:
@@ -207,12 +207,10 @@ class E6Downloader:
             elif not isinstance(item, typ):
                 raise ValueError(f'Invalid {name} type of {item}. Use type:{typ} only.')
 
-
-    def removeslash(self, s):  # removesuffix version for python 3.8
+    def removeslash(self, s: str) -> str:  # removesuffix version for python 3.8
         return s[:-1] if (s[-1] == '/') else s
 
-
-    def prep_params(self, prms, batch_count, base_folder):
+    def prep_params(self, prms: dict[str, Any], batch_count: int, base_folder: str) -> None:
         cat_to_num = {'general': 0, 'artist': 1, 'rating': 2, 'copyright': 3, 'character': 4, 'species': 5, 'invalid': 6,
                       'meta': 7, 'lore': 8}
         cat_set = set(cat_to_num.keys())
@@ -234,17 +232,17 @@ class E6Downloader:
         self.check_valid_param(prms["include_webm"], 'include_webm', (True, False))
         self.check_valid_param(prms["include_swf"], 'include_swf', (True, False))
 
-        for i, g in enumerate(zip(prms["include_png"], prms["include_jpg"], prms["include_gif"], prms["include_webm"],
+        for i, filetypes in enumerate(zip(prms["include_png"], prms["include_jpg"], prms["include_gif"], prms["include_webm"],
                                   prms["include_swf"])):
-            if not any(g):
+            if not any(filetypes):
                 raise ValueError(f'Please include at least one file type at batch {i}')
 
         self.check_valid_param(prms["include_explicit"], 'include_explicit', (True, False))
         self.check_valid_param(prms["include_questionable"], 'include_questionable', (True, False))
         self.check_valid_param(prms["include_safe"], 'include_safe', (True, False))
 
-        for i, g in enumerate(zip(prms["include_explicit"], prms["include_questionable"], prms["include_safe"])):
-            if not any(g):
+        for i, ratings in enumerate(zip(prms["include_explicit"], prms["include_questionable"], prms["include_safe"])):
+            if not any(ratings):
                 raise ValueError(f'Please include at least one rating at batch {i}')
 
         self.check_valid_param(prms["min_score"], 'min_score', None, int)
@@ -299,7 +297,7 @@ class E6Downloader:
             else:
                 prms["save_searched_list_path"][i] = None
 
-        get_searched_list_from_path = {}
+        get_searched_list_from_path: dict[str, set] = {}
         get_searched_list_type_from_path = {}
         for i, path in enumerate(prms["save_searched_list_path"]):
             if path is not None:
@@ -447,14 +445,13 @@ class E6Downloader:
             if do_include_tag_file is False:
                 prms["method_tag_files"][i] = 'skip'
 
-
-    def check_tag_query(self, prms, e621_tags_set):
-        tags = ','.join(prms["required_tags"]).replace(' ', '')
-        tags = set(re.split(',|\|', tags))
+    def check_tag_query(self, prms: dict[str, Any], e621_tags_set: set[str]) -> None:
+        tags_cleaned = ','.join(prms["required_tags"]).replace(' ', '')
+        tags: set[str] = set(re.split(',|\|', tags_cleaned))
         if '' in tags:
             tags.remove('')
-        asterisks = []
-        no_asterisks = []
+        asterisks: list[str] = []
+        no_asterisks: list[str] = []
         for tag in tags:
             if '*' in tag:
                 asterisks.append(tag)
@@ -473,8 +470,8 @@ class E6Downloader:
                 else:
                     raise ValueError(f'required tag "{tag}" is not found in any e621 tag.')
 
-        tags = ','.join(prms["blacklist"]).replace(' ', '')
-        tags = set(re.split(',|\|', tags))
+        tags_cleaned = ','.join(prms["blacklist"]).replace(' ', '')
+        tags = set(re.split(',|\|', tags_cleaned))
         if '' in tags:
             tags.remove('')
         asterisks = []
@@ -497,9 +494,8 @@ class E6Downloader:
                 else:
                     raise ValueError(f'blacklist tag "{tag}" is not found in any e621 tag.')
 
-
-    def get_db(self, base_folder, posts_csv='', tags_csv='', e621_posts_list_filename='', e621_tags_list_filename='',
-               keep_db=False):
+    def get_db(self, base_folder: str, posts_csv: str = '', tags_csv: str = '', e621_posts_list_filename: str = '', e621_tags_list_filename: str = '',
+               keep_db: bool = False) -> tuple[str, dict[str, str], set[str]]:
         if all((posts_csv == '', e621_posts_list_filename == '')) or all((tags_csv == '', e621_tags_list_filename == '')):
             db_export_file_path = os.path.join(base_folder, 'db_export.html')
             subprocess.check_output(
@@ -538,7 +534,7 @@ class E6Downloader:
                 print(posts_file_path)
                 if not os.path.isfile(posts_file_path):
                     with requests.get(posts_link, stream=True) as r:
-                        total_length = int(r.headers.get("Content-Length"))
+                        total_length = int(r.headers.get("Content-Length", "0"))
 
                         with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
                             with open(posts_file_path, 'wb') as output:
@@ -573,7 +569,7 @@ class E6Downloader:
                 print(tags_file_path)
                 if not os.path.isfile(tags_file_path):
                     with requests.get(tags_link, stream=True) as r:
-                        total_length = int(r.headers.get("Content-Length"))
+                        total_length = int(r.headers.get("Content-Length", "0"))
 
                         with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
                             with open(tags_file_path, 'wb') as output:
@@ -608,8 +604,7 @@ class E6Downloader:
 
         return e621_posts_list_filename, tag_to_cat, e621_tags_set
 
-
-    def collect_posts(self, prms, batch_num, e621_posts_list_filename):
+    def collect_posts(self, prms: dict[str, Any], batch_num: int, e621_posts_list_filename: str) -> str | None:
         print(f"## Collecting posts for batch {batch_num}")
         if self.cached_e621_posts is None:
             df = pl.read_parquet(e621_posts_list_filename)
@@ -655,12 +650,12 @@ class E6Downloader:
             print(f'## Removing posts with favorite count < {prms["min_fav_count"][batch_num]}')
             df = df.filter(pl.col('fav_count') >= prms["min_fav_count"][batch_num])
 
-        included_file_ext = set(['png' * prms["include_png"][batch_num], 'jpg' * prms["include_jpg"][batch_num],
+        raw_included_file_ext = set(['png' * prms["include_png"][batch_num], 'jpg' * prms["include_jpg"][batch_num],
                                  'gif' * prms["include_gif"][batch_num], 'webm' * prms["include_webm"][batch_num],
                                  'swf' * prms["include_swf"][batch_num]])
-        if '' in included_file_ext:
-            included_file_ext.remove('')
-        included_file_ext = '|'.join(included_file_ext)
+        if '' in raw_included_file_ext:
+            raw_included_file_ext.remove('')
+        included_file_ext = '|'.join(raw_included_file_ext)
         if included_file_ext:
             df = df.filter(pl.col('file_ext').str.contains(included_file_ext))
 
@@ -761,8 +756,7 @@ class E6Downloader:
 
         return posts_save_path
 
-
-    def create_searched_list(self, prms):
+    def create_searched_list(self, prms: dict[str, Any]) -> None:
         for path in set(prms["save_searched_list_path"]):
             if path is not None:
                 l = prms["get_searched_list_from_path"][path]
@@ -772,11 +766,11 @@ class E6Downloader:
                     with open(path, 'w') as f:
                         f.write('\n'.join([str(s) for s in l]))
 
-
-    def run_download(self, file, length, dwn_log_path, err_log_path):
-        failed_md5 = set()
+    def run_download(self, file: str, length: int, dwn_log_path: str, err_log_path: str) -> set[str]:
+        failed_md5: set[str] = set()
         cmd = [self.aria2c_path, '-c', '-x', '16', '-k', '1M', '-j', str(multiprocessing.cpu_count()), '-i', file]
         popen = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        assert popen.stdout  # check for stdout existence, needs for typecheckers
         out_log = ''
         ctr = 0
         DL = ''
@@ -811,8 +805,9 @@ class E6Downloader:
         os.remove(file)
         return failed_md5
 
-
-    def download_posts(self, prms, batch_nums, posts_save_paths, tag_to_cat, base_folder='', batch_mode=False):
+    def download_posts(self, prms: dict[str, Any], batch_nums: list[int], posts_save_paths: list[str],
+                       tag_to_cat: dict[str, str], base_folder: str = '', batch_mode: bool = False
+                       ) -> pl.DataFrame:
         _img_lists_df = pl.DataFrame()
         __df = pl.DataFrame()
         _md5_source = pl.DataFrame()
@@ -939,8 +934,8 @@ class E6Downloader:
                                                                             md5_and_source["filename_no_ext"].to_list(),
                                                                             md5_and_source["filename"].to_list(),
                                                                             md5_and_source["md5"].to_list()):
-                links = source.split('\n')
-                ext_links = {'.png': [], '.jpg': [], '.gif': [], '.webm': [], '.swf': []}
+                links: list[str] = source.split('\n')
+                ext_links: dict[str, list[str]] = {'.png': [], '.jpg': [], '.gif': [], '.webm': [], '.swf': []}
                 found_one = False
                 for link in links:
                     for ext in ext_links.keys():
@@ -1057,7 +1052,7 @@ class E6Downloader:
             category_ctr = prms["get_cat_tag_counter_from_path"][path]
             selected_cats = prms["selected_cats"][batch_num]
             reorder_tags = prms["reorder_tags"][batch_num]
-            tag_sep = prms["tag_sep"][batch_num]
+            tag_sep: str = prms["tag_sep"][batch_num]
             prepend_tags = [s.strip() for s in prms["prepend_tags"][batch_num].split(tag_sep)]
             prepend_tags = [s for s in prepend_tags if s != '']
             append_tags = [s.strip() for s in prms["append_tags"][batch_num].split(tag_sep)]
@@ -1079,12 +1074,13 @@ class E6Downloader:
                     if tagfilebasename_lst[idx] in tagfiles_no_post:
                         dont_count = True
                     rating = rating_lst[idx]
+                    tags: list[str]
                     if rating in rating_tags:
                         tags = [rating_tags[rating]] + tag_string_lst[idx].split(' ')
                     else:
                         tags = tag_string_lst[idx].split(' ')
-                    segregate = {}
-                    unsegregated = []
+                    segregate: dict[str, list[str]] = {}
+                    unsegregated: list[str] = []
                     for tag in tags:
                         if tag not in remove_tags:
                             if tag in tag_to_cat:
@@ -1111,16 +1107,16 @@ class E6Downloader:
 
                     if reorder_tags:
                         category_nums = [c for c in selected_cats if c in segregate]
-                        updated_tags = []
+                        updated_tags_lst = []
                         for cat_num in category_nums:
-                            updated_tags += segregate[cat_num]
+                            updated_tags_lst += segregate[cat_num]
                     else:
-                        updated_tags = unsegregated
+                        updated_tags_lst = unsegregated
                     if prepend_tags:
-                        updated_tags = [tag for tag in prepend_tags if tag not in updated_tags] + updated_tags
+                        updated_tags_lst = [tag for tag in prepend_tags if tag not in updated_tags_lst] + updated_tags_lst
                     if append_tags:
-                        updated_tags = updated_tags + [tag for tag in append_tags if tag not in updated_tags]
-                    updated_tags = tag_sep.join(updated_tags)
+                        updated_tags_lst = updated_tags_lst + [tag for tag in append_tags if tag not in updated_tags_lst]
+                    updated_tags = tag_sep.join(updated_tags_lst)
                     if replace_underscores:
                         updated_tags = updated_tags.replace('_', ' ')
                     if remove_parentheses:
@@ -1161,8 +1157,7 @@ class E6Downloader:
             _img_lists_df = _img_lists_df.unique(subset=['directory', 'filename_no_ext'])
         return _img_lists_df
 
-
-    def create_tag_count(self, prms):
+    def create_tag_count(self, prms: dict[str, Any]) -> None:
         cat_to_num = {'general': 0, 'artist': 1, 'rating': 2, 'copyright': 3, 'character': 4, 'species': 5, 'invalid': 6, 'meta': 7, 'lore': 8}
         for path in set(prms["tag_count_list_folder"]):
             empty = True
@@ -1187,19 +1182,17 @@ class E6Downloader:
                 if not empty:
                     print(f'## Tag count CSVs {path} done!')
 
-
-    def init_counter(self):
+    def init_counter(self) -> None:
         self.counter = multiprocessing.Manager().Value(c_int, 0)
 
-
-    def increment(self, counter, counter_lock, length):
+    def increment(self, counter: ValueProxy[int], counter_lock: Lock, length: int) -> None:
         with counter_lock:
             counter.value += 1
             print(f'\r## Resizing Images: {counter.value}/{length} ', end='')
 
-
-    def parallel_resize(self, counter, counter_lock, imgs_folder, img_file, img_ext, min_short_side, num_images, failed_images,
-                        delete_original, resized_img_folder):
+    def parallel_resize(self, counter: ValueProxy[int], counter_lock: Lock,
+                        imgs_folder: str, img_file: str, img_ext: str, min_short_side: int, num_images: int, failed_images: list[str],
+                        delete_original: bool, resized_img_folder: str) -> None:
 
         # send total to progressbar
         if self.backend_conn:
@@ -1250,9 +1243,7 @@ class E6Downloader:
 
         self.increment(self.counter, self.counter_lock, num_images)
 
-
-
-    def resize_imgs(self, prms, batch_num, num_cpu, img_folders, img_files, tag_files):
+    def resize_imgs(self, prms: dict[str, Any], batch_num: int, num_cpu: int, img_folders: list[str], img_files: list[str], tag_files: list[str]) -> None:
         min_short_side = prms["min_short_side"][batch_num]
         img_ext = prms["img_ext"][batch_num]
         delete_original = prms["delete_original"][batch_num]
@@ -1284,9 +1275,8 @@ class E6Downloader:
                     shutil.copyfile(img_folder + tag_file, resized_img_folder + tag_file)
         print('')
 
-
-    def resize_imgs_batch(self, num_cpu, img_folders, img_files, resized_img_folders, min_short_side, img_ext, delete_original,
-                          tag_files, method_tag_files):
+    def resize_imgs_batch(self, num_cpu: int, img_folders: list[str], img_files: list[str], resized_img_folders: list[str], min_short_side: list[int], img_ext: list[str], delete_original: list[bool],
+                          tag_files: list[str], method_tag_files: list[str]) -> None:
         self.init_counter()
 
         length = len(img_files)
@@ -1312,6 +1302,6 @@ class E6Downloader:
                     shutil.copyfile(img_fol + tag_file, res_fol + tag_file)
         print('')
 
-    def close_pipe(self):
+    def close_pipe(self) -> None:
         if self.backend_conn:
             self.backend_conn.close()
